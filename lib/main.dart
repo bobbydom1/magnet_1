@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -169,7 +170,7 @@ class WidgetGridManager {
     }
     
     // Suche die erste freie Position
-    for (int y = 0; y < 20; y++) { // Maximal 20 Zeilen
+    for (int y = 0; y < 50; y++) { // Maximal 50 Zeilen
       for (int x = 0; x <= gridColumns - newWidget.gridWidth; x++) {
         bool canPlace = true;
         
@@ -193,20 +194,9 @@ class WidgetGridManager {
     return null;
   }
   
-  // Berechnet die Höhe des Grids basierend auf den Widgets
-  static double calculateGridHeight(List<AnalysisWidgetModel> widgets) {
-    int maxY = 0;
-    
-    for (var widget in widgets) {
-      if (widget.position != null) {
-        int bottomY = widget.position!.y + widget.gridHeight;
-        if (bottomY > maxY) {
-          maxY = bottomY;
-        }
-      }
-    }
-    
-    return maxY * (cellSize + cellSpacing) + cellSpacing;
+  // Berechnet die Höhe des Grids basierend auf der Anzahl der Zeilen
+  static double calculateGridHeight(int rows) {
+    return rows * (cellSize + cellSpacing) + cellSpacing;
   }
   
   // Prüft ob eine Position gültig ist
@@ -1187,6 +1177,7 @@ class AnalysisWorkspacePage extends StatefulWidget {
   final Function(int) onDisplayHistoryLengthChanged;
   final Function() onExportToCSV;
   final VoidCallback onClearHistory;
+  final Function(bool)? onWidgetTouchChanged;
   
   const AnalysisWorkspacePage({
     Key? key,
@@ -1197,6 +1188,7 @@ class AnalysisWorkspacePage extends StatefulWidget {
     required this.onDisplayHistoryLengthChanged,
     required this.onExportToCSV,
     required this.onClearHistory,
+    this.onWidgetTouchChanged,
   }) : super(key: key);
 
   @override
@@ -1225,11 +1217,43 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         data: widget.sensorHistory,
       ),
     ];
+    
+    // ScrollController Listener um Scrollen zu verhindern wenn Widget berührt wird
+    _scrollController.addListener(() {
+      if (_isWidgetBeingTouched && _lockedScrollPosition != null) {
+        if (_scrollController.offset != _lockedScrollPosition) {
+          _scrollController.jumpTo(_lockedScrollPosition!);
+        }
+      }
+    });
+    
+    _horizontalScrollController.addListener(() {
+      if (_isWidgetBeingTouched && _lockedHorizontalScrollPosition != null) {
+        if (_horizontalScrollController.offset != _lockedHorizontalScrollPosition) {
+          _horizontalScrollController.jumpTo(_lockedHorizontalScrollPosition!);
+        }
+      }
+    });
+    
+    // Berechne initiale Grid-Zeilen basierend auf Bildschirmhöhe und initialisiere Orientierung
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final screenHeight = MediaQuery.of(context).size.height;
+      final minRows = ((screenHeight - 200) / (WidgetGridManager.cellSize + WidgetGridManager.cellSpacing)).ceil();
+      
+      // Initialisiere Orientierung korrekt
+      final orientation = MediaQuery.of(context).orientation;
+      _isPortrait = orientation == Orientation.portrait;
+      
+      setState(() {
+        _currentGridRows = math.max(minRows, 10);
+      });
+    });
   }
   
   @override
   void dispose() {
     _scrollController.dispose();
+    _horizontalScrollController.dispose();
     _autoScrollTimer?.cancel();
     super.dispose();
   }
@@ -1678,6 +1702,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   Widget build(BuildContext context) {
     final activeTab = openTabs[activeTabIndex];
     
+    
     return Scaffold(
       backgroundColor: const Color(0xFFF2F2F7), // iOS System Background
       body: Column(
@@ -1954,8 +1979,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       }
     }
     
-    final gridHeight = WidgetGridManager.calculateGridHeight(widgets);
-    final minHeight = MediaQuery.of(context).size.height * 0.6;
+    // Berechne Grid-Höhe basierend auf aktuellen Zeilen
+    final gridHeight = WidgetGridManager.calculateGridHeight(_currentGridRows);
+    final minHeight = MediaQuery.of(context).size.height - 200; // Fast volle Höhe minus Header/Toolbar
     
     // Berechne Grid-Breite basierend auf Orientierung
     final screenWidth = MediaQuery.of(context).size.width;
@@ -1967,24 +1993,73 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     final cellWidth = (gridWidth - totalSpacing) / gridColumns;
     final cellHeight = isPortrait ? cellWidth : WidgetGridManager.cellSize; // In Portrait quadratisch, in Landscape fixe Höhe
     
-    return Container(
-      padding: const EdgeInsets.only(left: 8, top: 8, right: 8, bottom: 8),
-      child: NotificationListener<ScrollNotification>(
-        onNotification: (scrollNotification) {
-          // Blockiere Scrollen wenn ein Widget berührt, gezogen oder resized wird
-          if (_isWidgetBeingTouched || _currentDragWidget != null || _currentResizeWidget != null) {
-            return true; // true = Notification konsumiert, kein Scrollen
+    return GestureDetector(
+      // Blockiere horizontale Swipes wenn Widget berührt wird
+      onHorizontalDragStart: isEditMode && (_isWidgetBeingTouched || _currentDragWidget != null) 
+          ? (_) {} // Leerer Handler blockiert die Geste
+          : null,
+      child: Container(
+        padding: const EdgeInsets.only(left: 8, top: 8, right: 8, bottom: 8),
+        child: Listener(
+        onPointerDown: (event) {
+          if (isEditMode) {
+            // Prüfe ob der Touch auf einem Widget ist
+            final localPosition = event.localPosition - const Offset(8, 8); // Padding abziehen
+            
+            for (var widget in widgets) {
+              if (widget.position != null) {
+                final widgetLeft = widget.position!.x * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
+                final widgetTop = widget.position!.y * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
+                final widgetRight = widgetLeft + widget.gridWidth * cellWidth + (widget.gridWidth - 1) * WidgetGridManager.cellSpacing;
+                final widgetBottom = widgetTop + widget.gridHeight * cellHeight + (widget.gridHeight - 1) * WidgetGridManager.cellSpacing;
+                
+                // Berücksichtige Scroll-Offset je nach Orientierung
+                final verticalScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+                final horizontalScrollOffset = _horizontalScrollController.hasClients ? _horizontalScrollController.offset : 0.0;
+                
+                // Immer beide Scroll-Offsets berücksichtigen, falls vorhanden
+                final adjustedX = localPosition.dx + horizontalScrollOffset;
+                final adjustedY = localPosition.dy + verticalScrollOffset;
+                
+                if (adjustedX >= widgetLeft && 
+                    adjustedX <= widgetRight && 
+                    adjustedY >= widgetTop && 
+                    adjustedY <= widgetBottom) {
+                  _setWidgetBeingTouched(true);
+                  return;
+                }
+              }
+            }
+            _setWidgetBeingTouched(false);
           }
-          return false; // false = normal scrollen
         },
-        child: SingleChildScrollView(
-          controller: _scrollController,
-          scrollDirection: Axis.vertical,
+        onPointerUp: (_) {
+          _setWidgetBeingTouched(false);
+        },
+        onPointerCancel: (_) {
+          _setWidgetBeingTouched(false);
+        },
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (scrollNotification) {
+            // Blockiere Scrollen wenn ein Widget berührt, gezogen oder resized wird
+            if (_isWidgetBeingTouched || _currentDragWidget != null || _currentResizeWidget != null) {
+              // Debug info
+              // Blocking scroll
+              return true; // true = Notification konsumiert, kein Scrollen
+            }
+            return false; // false = normal scrollen
+          },
           child: isPortrait 
-            ? Container(
-                width: double.infinity,
-                height: gridHeight < minHeight ? minHeight : gridHeight,
-                child: Stack(
+            ? SingleChildScrollView(
+                controller: _scrollController,
+                scrollDirection: Axis.vertical,
+                physics: isEditMode && (_isWidgetBeingTouched || _currentDragWidget != null)
+                      ? const NeverScrollableScrollPhysics() 
+                      : const AlwaysScrollableScrollPhysics(),
+                child: Container(
+                  width: double.infinity,
+                  height: gridHeight < minHeight ? minHeight : gridHeight,
+                  child: Stack(
                   children: [
                     // Grid-Hintergrund - immer sichtbar für bessere Struktur
                     _buildGridBackground(),
@@ -2050,13 +2125,25 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                     }).toList(),
                   ],
                 ),
-              )
-            : SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Container(
-                  width: math.max(gridWidth, MediaQuery.of(context).size.width - 16),
-                  height: gridHeight < minHeight ? minHeight : gridHeight,
-                  child: Stack(
+              ))
+            : NotificationListener<ScrollNotification>(
+                onNotification: (scrollNotification) {
+                  // Blockiere Scrollen wenn ein Widget berührt, gezogen oder resized wird
+                  if (_isWidgetBeingTouched || _currentDragWidget != null || _currentResizeWidget != null) {
+                    return true; // Block scrolling
+                  }
+                  return false;
+                },
+                child: SingleChildScrollView(
+                    controller: _horizontalScrollController,
+                    scrollDirection: Axis.horizontal,
+                    physics: isEditMode && (_isWidgetBeingTouched || _currentDragWidget != null)
+                        ? const NeverScrollableScrollPhysics() 
+                        : const AlwaysScrollableScrollPhysics(),
+                    child: Container(
+                    width: math.max(gridWidth, MediaQuery.of(context).size.width - 16),
+                    height: gridHeight < minHeight ? minHeight : gridHeight,
+                    child: Stack(
                     children: [
                       // Grid-Hintergrund - immer sichtbar für bessere Struktur
                       _buildGridBackground(),
@@ -2127,9 +2214,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                   ),
                 ),
               ),
+          ),
         ),
       ),
-    );
+    ),
+  );
   }
   
   Widget _buildGridBackground() {
@@ -2208,55 +2297,98 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   }) {
     final activeTab = openTabs[tabIndex];
     
-    return GestureDetector(
+    return Listener(
       behavior: HitTestBehavior.opaque,
-      // Touch-Erkennung für sofortiges Scroll-Blocking
-      onTapDown: (_) {
+      onPointerDown: (event) {
         if (isEditMode) {
-          // Sofort blockieren ohne setState für bessere Performance
-          _isWidgetBeingTouched = true;
+          // Sofort blockieren, ohne auf Gesture-Erkennung zu warten
+          _setWidgetBeingTouched(true);
+          
+          // Wichtig: Sofort HapticFeedback für bessere Reaktion
+          HapticFeedback.selectionClick();
+          
+          // Stoppe aktives Scrolling sofort und verhindere weiteres Scrollen
+          try {
+            if (_scrollController.hasClients) {
+              _scrollController.jumpTo(_scrollController.offset);
+              // Wichtig: Position merken für späteren Vergleich
+              _lockedScrollPosition = _scrollController.offset;
+            }
+            if (_horizontalScrollController.hasClients) {
+              _horizontalScrollController.jumpTo(_horizontalScrollController.offset);
+              // Wichtig: Position merken für späteren Vergleich  
+              _lockedHorizontalScrollPosition = _horizontalScrollController.offset;
+            }
+          } catch (e) {
+            // Error handling silent
+          }
+          
+          // Touch detected - _isWidgetBeingTouched set to true
         }
       },
-      onTapUp: (_) {
-        _isWidgetBeingTouched = false;
+      onPointerUp: (_) {
+        if (isEditMode) {
+          _setWidgetBeingTouched(false);
+          _lockedScrollPosition = null;
+          _lockedHorizontalScrollPosition = null;
+          // Pointer up - scroll unlocked
+        }
       },
-      onTapCancel: () {
-        _isWidgetBeingTouched = false;
+      onPointerCancel: (_) {
+        if (isEditMode) {
+          _setWidgetBeingTouched(false);
+          _lockedScrollPosition = null;
+          _lockedHorizontalScrollPosition = null;
+          // Pointer cancelled - scroll unlocked
+        }
       },
-      // Drag-Funktionalität für das gesamte Widget
-      onPanStart: (details) {
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // Niedrigere Schwelle für Drag-Erkennung
+        dragStartBehavior: DragStartBehavior.down,
+        // Wichtig: onPanDown wird sofort beim Touch ausgelöst
+        onPanDown: (details) {
           if (!isEditMode || model.isResizing) return;
-          print("DEBUG: onPanStart called for widget ${model.title}");
-          print("DEBUG: isEditMode: $isEditMode, isResizing: ${model.isResizing}");
+          
+          // Sofort visuelles Feedback geben und Scrollen blockieren
+          setState(() {
+            _currentDragWidget = model;
+            model.isBeingDragged = true;
+            _dragStartPosition = details.globalPosition;
+            _dragStartGridPosition = model.position;
+            _dragPreviewPosition = model.position;
+            _setWidgetBeingTouched(true); // Wichtig: Sofort setzen für AbsorbPointer
+          });
+          
+          HapticFeedback.selectionClick();
+        },
+        // Drag-Funktionalität für das gesamte Widget
+        onPanStart: (details) {
+          if (!isEditMode || model.isResizing) return;
+          
+          // onPanDown hat bereits die wichtigsten Werte gesetzt
+          // Hier nur noch fehlende Werte ergänzen
           
           // Reset alle anderen Widgets
           for (var widget in openTabs[tabIndex].widgets) {
-            widget.isBeingDragged = false;
-            widget.dragOffset = null;
+            if (widget != model) {
+              widget.isBeingDragged = false;
+              widget.dragOffset = null;
+            }
           }
           
-          // Starte Drag für dieses Widget
-          model.isBeingDragged = true;
-          _dragStartPosition = details.globalPosition;
-          _dragStartGridPosition = model.position;
-          _currentDragWidget = model;
           _dragStartScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+          
           // Setze initiale dragOffset auf aktuelle Position
           model.dragOffset = Offset(
             model.position!.x.toDouble(),
             model.position!.y.toDouble(),
           );
-          
-          print("DEBUG: Drag started - position: ${model.position}, dragOffset: ${model.dragOffset}");
-          print("DEBUG: _dragStartPosition: $_dragStartPosition");
-          
-          setState(() {});
-          HapticFeedback.selectionClick();
         },
         onPanUpdate: (details) {
           if (!isEditMode || !model.isBeingDragged || _currentDragWidget != model) return;
           
-          print("DEBUG: onPanUpdate called - isBeingDragged: ${model.isBeingDragged}, currentWidget matches: ${_currentDragWidget == model}");
+          // Performance: Debug print removed
           
           if (_dragStartPosition != null && _dragStartGridPosition != null) {
             // Kompensiere für Scroll-Offset-Änderungen
@@ -2264,7 +2396,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             final scrollDelta = currentScrollOffset - _dragStartScrollOffset;
             
             final delta = details.globalPosition - _dragStartPosition! + Offset(0, scrollDelta);
-            print("DEBUG: Delta: $delta, ScrollDelta: $scrollDelta");
+            // Performance: Debug print removed
             
             // Berechne aktuelle Zellengröße
             final orientation = MediaQuery.of(context).orientation;
@@ -2279,36 +2411,59 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             final exactX = _dragStartGridPosition!.x + (delta.dx / (cellWidth + WidgetGridManager.cellSpacing));
             final exactY = _dragStartGridPosition!.y + (delta.dy / (cellHeight + WidgetGridManager.cellSpacing));
             
-            print("DEBUG: ExactX: $exactX, ExactY: $exactY");
+            // Performance: Debug print removed
             
             // Berechne die nächste Grid-Position für die Vorschau (wo es einrasten wird)
             final previewX = exactX.round().clamp(0, currentGridColumns - model.gridWidth);
-            final previewY = exactY.round().clamp(0, 20);
+            final previewY = exactY.round().clamp(0, _currentGridRows - 1);
             
             final previewPosition = GridPosition(x: previewX.toInt(), y: previewY.toInt());
             
             // Nur setState aufrufen wenn sich wirklich etwas geändert hat
             bool needsUpdate = false;
             
+            // Erweitere Grid wenn nötig
+            if (previewY >= _currentGridRows - 2 && _currentGridRows < 50) {
+              // Verzögere setState um Performance zu verbessern
+              Future.microtask(() {
+                if (mounted) {
+                  setState(() {
+                    _currentGridRows = math.min(_currentGridRows + 5, 50); // Füge 5 Zeilen hinzu
+                  });
+                }
+              });
+            }
+            
+            // Zeige Warnung wenn am unteren Limit
+            if (previewY >= 48 && (_dragPreviewPosition?.y ?? 0) < 48) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Maximale Anzahl von 50 Zeilen erreicht'),
+                  duration: Duration(seconds: 2),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+            
             // Vorschau zeigt, wo das Widget einrasten wird
             if (WidgetGridManager.isValidPosition(openTabs[tabIndex].widgets, model, previewPosition)) {
               if (_dragPreviewPosition?.x != previewPosition.x || _dragPreviewPosition?.y != previewPosition.y) {
                 _dragPreviewPosition = previewPosition;
                 needsUpdate = true;
-                print("DEBUG: Preview position set to: $previewX, $previewY");
+                // Preview position updated
               }
             }
             
             // Widget bewegt sich stufenlos mit dem Finger
             final newDragOffset = Offset(
               exactX.clamp(0.0, (currentGridColumns - model.gridWidth).toDouble()),
-              exactY.clamp(0.0, 20.0),
+              exactY.clamp(0.0, (_currentGridRows - 1).toDouble()),
             );
             
             if (model.dragOffset?.dx != newDragOffset.dx || model.dragOffset?.dy != newDragOffset.dy) {
               model.dragOffset = newDragOffset;
               needsUpdate = true;
-              print("DEBUG: New dragOffset: ${model.dragOffset}");
+              // DragOffset updated
             }
             
             if (needsUpdate) {
@@ -2316,21 +2471,21 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             }
             
             // Auto-Scroll wenn nah am Rand
-            _startAutoScroll(details.globalPosition.dy);
+            _startAutoScroll(details.globalPosition.dy, dragPositionX: details.globalPosition.dx);
           } else {
             print("DEBUG: WARNING - _dragStartPosition or _dragStartGridPosition is null!");
           }
         },
         onPanEnd: (_) {
           if (!isEditMode || !model.isBeingDragged) return;
-          print("DEBUG: onPanEnd called");
+          // Pan ended
           
           // Setze Widget auf die Vorschau-Position
           if (_dragPreviewPosition != null) {
             model.position = _dragPreviewPosition;
-            print("DEBUG: Widget moved to preview position: $_dragPreviewPosition");
+            // Widget moved to preview position
           } else {
-            print("DEBUG: No preview position, keeping current position");
+            // No preview position, keeping current position
           }
           
           model.isBeingDragged = false;
@@ -2339,20 +2494,53 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           _dragStartGridPosition = null;
           _currentDragWidget = null;
           _dragPreviewPosition = null;
-          _isWidgetBeingTouched = false;
+          _setWidgetBeingTouched(false); // Reset touch state
           
           // Stoppe Auto-Scroll
           _stopAutoScroll();
           
-          print("DEBUG: Drag ended, all values reset");
+          // Drag ended, all values reset
+          
+          HapticFeedback.mediumImpact();
+          
+          // Verzögertes setState um Frame-Skipping zu vermeiden
+          Future.microtask(() {
+            if (mounted) {
+              setState(() {});
+            }
+          });
+        },
+        onPanCancel: () {
+          if (!isEditMode || !model.isBeingDragged) return;
+          
+          // Reset alles wenn Geste abgebrochen wird
+          model.isBeingDragged = false;
+          model.dragOffset = null;
+          _dragStartPosition = null;
+          _dragStartGridPosition = null;
+          _currentDragWidget = null;
+          _dragPreviewPosition = null;
+          _setWidgetBeingTouched(false);
           
           setState(() {});
-          HapticFeedback.mediumImpact();
         },
-      child: AnimatedScale(
-        duration: const Duration(milliseconds: 200),
-        scale: model.isBeingDragged ? 1.05 : 1.0,
-        child: Container(
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (_) {
+          if (isEditMode) {
+            // Widget is being resized
+            // Touch detected - _isWidgetBeingTouched set to true
+          }
+        },
+        onPointerUp: (_) {
+          if (isEditMode && _currentDragWidget == null) {
+            // Drag ended
+          }
+        },
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 200),
+          scale: model.isBeingDragged ? 1.05 : 1.0,
+          child: Container(
           decoration: BoxDecoration(
             color: CupertinoColors.systemBackground.resolveFrom(context),
             borderRadius: BorderRadius.circular(16),
@@ -2598,8 +2786,10 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           ),
         ),
       ),
-    );
-  }
+      ),
+    ),
+  );
+}
   
   void _handleWidgetResize(AnalysisWidgetModel widget, DragUpdateDetails details, int tabIndex) {
     if (_resizeStartPosition == null) return;
@@ -2669,45 +2859,101 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   
   // ScrollController für Auto-Scroll beim Drag
   ScrollController _scrollController = ScrollController();
+  ScrollController _horizontalScrollController = ScrollController();
+  double? _lockedScrollPosition;
+  double? _lockedHorizontalScrollPosition;
   Timer? _autoScrollTimer;
   
-  void _startAutoScroll(double dragPositionY) {
+  // Grid-Zeilen Management
+  int _currentGridRows = 10; // Start mit 10 Zeilen
+  
+  void _setWidgetBeingTouched(bool value) {
+    if (_isWidgetBeingTouched != value) {
+      _isWidgetBeingTouched = value;
+      widget.onWidgetTouchChanged?.call(value);
+      
+      // Lock scroll positions when widget is touched
+      if (value) {
+        _lockedScrollPosition = _scrollController.hasClients ? _scrollController.offset : null;
+        _lockedHorizontalScrollPosition = _horizontalScrollController.hasClients ? _horizontalScrollController.offset : null;
+      } else {
+        _lockedScrollPosition = null;
+        _lockedHorizontalScrollPosition = null;
+      }
+    }
+  }
+  
+  void _startAutoScroll(double dragPositionY, {double? dragPositionX}) {
     _autoScrollTimer?.cancel();
     
     // Berechne die Viewport-Grenzen
     final viewportHeight = MediaQuery.of(context).size.height;
-    final scrollPosition = _scrollController.position;
-    final currentScroll = scrollPosition.pixels;
+    final viewportWidth = MediaQuery.of(context).size.width;
+    final orientation = MediaQuery.of(context).orientation;
+    final isPortrait = orientation == Orientation.portrait;
     
     // Definiere die Scroll-Zonen (obere und untere 100 Pixel)
     const edgeThreshold = 100.0;
-    const scrollSpeed = 15.0; // Erhöht von 5.0 auf 15.0 für schnelleres Scrollen
+    const scrollSpeed = 15.0;
     
-    double scrollDelta = 0.0;
+    double scrollDeltaY = 0.0;
+    double scrollDeltaX = 0.0;
     
-    // Prüfe ob wir am oberen Rand sind
-    if (dragPositionY < edgeThreshold && currentScroll > 0) {
-      // Scrolle nach oben
-      scrollDelta = -scrollSpeed * ((edgeThreshold - dragPositionY) / edgeThreshold);
+    if (isPortrait) {
+      // Vertikales Scrolling im Portrait-Modus
+      final scrollPosition = _scrollController.position;
+      final currentScroll = scrollPosition.pixels;
+      
+      // Prüfe ob wir am oberen Rand sind
+      if (dragPositionY < edgeThreshold && currentScroll > 0) {
+        scrollDeltaY = -scrollSpeed * ((edgeThreshold - dragPositionY) / edgeThreshold);
+      }
+      // Prüfe ob wir am unteren Rand sind
+      else if (dragPositionY > viewportHeight - edgeThreshold) {
+        scrollDeltaY = scrollSpeed * ((dragPositionY - (viewportHeight - edgeThreshold)) / edgeThreshold);
+      }
+    } else if (dragPositionX != null) {
+      // Horizontales Scrolling im Landscape-Modus
+      final scrollPosition = _horizontalScrollController.position;
+      final currentScroll = scrollPosition.pixels;
+      
+      // Prüfe ob wir am linken Rand sind
+      if (dragPositionX < edgeThreshold && currentScroll > 0) {
+        scrollDeltaX = -scrollSpeed * ((edgeThreshold - dragPositionX) / edgeThreshold);
+      }
+      // Prüfe ob wir am rechten Rand sind
+      else if (dragPositionX > viewportWidth - edgeThreshold) {
+        scrollDeltaX = scrollSpeed * ((dragPositionX - (viewportWidth - edgeThreshold)) / edgeThreshold);
+      }
     }
-    // Prüfe ob wir am unteren Rand sind
-    else if (dragPositionY > viewportHeight - edgeThreshold && 
-             currentScroll < scrollPosition.maxScrollExtent) {
-      // Scrolle nach unten
-      scrollDelta = scrollSpeed * ((dragPositionY - (viewportHeight - edgeThreshold)) / edgeThreshold);
-    }
     
-    if (scrollDelta != 0) {
+    if (scrollDeltaY != 0 || scrollDeltaX != 0) {
       _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-        if (!_scrollController.hasClients) {
-          timer.cancel();
-          return;
+        if (isPortrait && scrollDeltaY != 0) {
+          if (!_scrollController.hasClients) {
+            timer.cancel();
+            return;
+          }
+          
+          final scrollPosition = _scrollController.position;
+          final newScroll = _scrollController.offset + scrollDeltaY;
+          
+          _scrollController.jumpTo(
+            newScroll.clamp(0.0, scrollPosition.maxScrollExtent)
+          );
+        } else if (!isPortrait && scrollDeltaX != 0) {
+          if (!_horizontalScrollController.hasClients) {
+            timer.cancel();
+            return;
+          }
+          
+          final scrollPosition = _horizontalScrollController.position;
+          final newScroll = _horizontalScrollController.offset + scrollDeltaX;
+          
+          _horizontalScrollController.jumpTo(
+            newScroll.clamp(0.0, scrollPosition.maxScrollExtent)
+          );
         }
-        
-        final newScroll = _scrollController.offset + scrollDelta;
-        _scrollController.jumpTo(
-          newScroll.clamp(0.0, scrollPosition.maxScrollExtent)
-        );
       });
     }
   }
@@ -4832,6 +5078,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   
   // NEU: Zustand für die schwimmende Navigationsleiste
   bool _isNavExpanded = true;
+  
+  // NEU: Zustand für Widget-Touch in Analysis Tab
+  bool _isAnalysisWidgetBeingTouched = false;
   
   // Draggable FAB State
   Offset _fabPosition = const Offset(20, 20); // Position from bottom-right
@@ -8945,8 +9194,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       children: [
         // Die Hauptansicht mit den Tabs
         TabBarView(
-          // Deaktiviere das Wischen, wenn die Navigationsleiste eingeklappt ist
-          physics: _isNavExpanded
+          // Deaktiviere das Wischen, wenn die Navigationsleiste eingeklappt ist ODER wenn ein Widget berührt wird
+          physics: (_isNavExpanded && !_isAnalysisWidgetBeingTouched)
               ? const AlwaysScrollableScrollPhysics()
               : const NeverScrollableScrollPhysics(),
           controller: _tabController,
@@ -8972,6 +9221,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               onClearHistory: () {
                 setState(() {
                   sensorHistory.clear();
+                });
+              },
+              onWidgetTouchChanged: (isTouched) {
+                setState(() {
+                  _isAnalysisWidgetBeingTouched = isTouched;
                 });
               },
             ),
