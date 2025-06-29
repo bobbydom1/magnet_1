@@ -149,8 +149,11 @@ class WidgetGridManager {
       final columnWidth = cellSize + cellSpacing;
       return math.max(2, (availableWidth / columnWidth).floor());
     } else {
-      // In Landscape: Fixe 4 Spalten
-      return gridColumns;
+      // In Landscape: Mehr Spalten für horizontales Scrollen
+      final availableWidth = screenWidth - 16;
+      final columnWidth = cellSize + cellSpacing;
+      // Mindestens 6 Spalten im Landscape, damit Scrollen möglich ist
+      return math.max(6, (availableWidth / columnWidth).floor());
     }
   }
   
@@ -263,7 +266,7 @@ class GridBackgroundPainter extends CustomPainter {
         // Zell-Hintergrund
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(x, y, cellWidth, cellHeight),
-          Radius.circular(8),
+          Radius.circular(16), // Gleicher Radius wie Widgets
         );
         
         canvas.drawRRect(rect, cellPaint);
@@ -271,29 +274,7 @@ class GridBackgroundPainter extends CustomPainter {
       }
     }
     
-    // Zeichne Spalten-Nummern (nur erste Zeile)
-    final textPainter = TextPainter(
-      textDirection: TextDirection.ltr,
-    );
-    
-    for (int col = 0; col < gridColumns; col++) {
-      final x = col * (cellWidth + spacing) + spacing + cellWidth / 2;
-      final y = spacing - 20;
-      
-      textPainter.text = TextSpan(
-        text: '${col + 1}',
-        style: TextStyle(
-          color: CupertinoColors.systemGrey2.withOpacity(0.5),
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-      );
-      textPainter.layout();
-      textPainter.paint(
-        canvas, 
-        Offset(x - textPainter.width / 2, y),
-      );
-    }
+    // Spaltenbeschriftung entfernt - wird nicht benötigt
   }
   
   @override
@@ -1220,7 +1201,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     
     // ScrollController Listener um Scrollen zu verhindern wenn Widget berührt wird
     _scrollController.addListener(() {
-      if (_isWidgetBeingTouched && _lockedScrollPosition != null) {
+      // BEGRÜNDUNG: Die Sperre wird nur noch aktiv, wenn kein Widget gezogen wird (_currentDragWidget == null).
+      if (_isWidgetBeingTouched && _currentDragWidget == null && _lockedScrollPosition != null) {
         if (_scrollController.offset != _lockedScrollPosition) {
           _scrollController.jumpTo(_lockedScrollPosition!);
         }
@@ -1228,24 +1210,35 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     });
     
     _horizontalScrollController.addListener(() {
-      if (_isWidgetBeingTouched && _lockedHorizontalScrollPosition != null) {
+      // BEGRÜNDUNG: Die Sperre wird nur noch aktiv, wenn kein Widget gezogen wird (_currentDragWidget == null).
+      if (_isWidgetBeingTouched && _currentDragWidget == null && _lockedHorizontalScrollPosition != null) {
         if (_horizontalScrollController.offset != _lockedHorizontalScrollPosition) {
           _horizontalScrollController.jumpTo(_lockedHorizontalScrollPosition!);
         }
       }
     });
     
-    // Berechne initiale Grid-Zeilen basierend auf Bildschirmhöhe und initialisiere Orientierung
+    // Initialisiere Orientierung und Grid-Zeilen
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final screenHeight = MediaQuery.of(context).size.height;
-      final minRows = ((screenHeight - 200) / (WidgetGridManager.cellSize + WidgetGridManager.cellSpacing)).ceil();
-      
       // Initialisiere Orientierung korrekt
       final orientation = MediaQuery.of(context).orientation;
       _isPortrait = orientation == Orientation.portrait;
       
+      // Setze initiale Grid-Zeilen basierend auf vorhandenen Widgets
+      int maxRow = 0;
+      for (var tab in openTabs) {
+        for (var widget in tab.widgets) {
+          if (widget.position != null) {
+            final bottomRow = widget.position!.y + widget.gridHeight - 1;
+            if (bottomRow > maxRow) {
+              maxRow = bottomRow;
+            }
+          }
+        }
+      }
+      
       setState(() {
-        _currentGridRows = math.max(minRows, 10);
+        _currentGridRows = math.max(maxRow + 2, 10); // Mindestens 10 Zeilen
       });
     });
   }
@@ -1979,12 +1972,41 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       }
     }
     
-    // Berechne Grid-Höhe basierend auf aktuellen Zeilen
-    final gridHeight = WidgetGridManager.calculateGridHeight(_currentGridRows);
+    // Berechne die tatsächlich benötigte Grid-Höhe basierend auf dem untersten Widget
+    int maxRow = 0;
+    int maxCol = 0;
+    for (var widget in widgets) {
+      if (widget.position != null) {
+        final bottomRow = widget.position!.y + widget.gridHeight - 1;
+        if (bottomRow > maxRow) {
+          maxRow = bottomRow;
+        }
+        
+        // Berechne auch die rechteste Spalte für Landscape-Modus
+        final rightCol = widget.position!.x + widget.gridWidth - 1;
+        if (rightCol > maxCol) {
+          maxCol = rightCol;
+        }
+      }
+    }
+    
+    // Im Bearbeitungsmodus: Zeige das ganze Grid
+    // Im normalen Modus: Nur bis zum untersten Widget + etwas Puffer
+    final effectiveRows = isEditMode 
+        ? _currentGridRows  // Im Edit-Modus das volle Grid zeigen
+        : math.min(maxRow + 3, _currentGridRows);  // Im Normal-Modus nur bis zum letzten Widget + Puffer
+    
+    final gridHeight = WidgetGridManager.calculateGridHeight(effectiveRows);
     final minHeight = MediaQuery.of(context).size.height - 200; // Fast volle Höhe minus Header/Toolbar
     
     // Berechne Grid-Breite basierend auf Orientierung
     final screenWidth = MediaQuery.of(context).size.width;
+    
+    // Im Landscape-Modus: Passe die Grid-Breite an die Widgets an
+    final effectiveCols = isEditMode || isPortrait
+        ? gridColumns  // Im Portrait oder Edit-Modus normale Spaltenanzahl
+        : math.min(maxCol + 3, gridColumns);  // Im Landscape normal-Modus nur bis zum rechtesten Widget + Puffer
+    
     final gridWidth = screenWidth - 16; // Reduziertes Padding (8px auf jeder Seite)
     
     // Berechne die tatsächliche Zellengröße basierend auf verfügbarem Platz
@@ -2039,21 +2061,12 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         onPointerCancel: (_) {
           _setWidgetBeingTouched(false);
         },
-        child: NotificationListener<ScrollNotification>(
-          onNotification: (scrollNotification) {
-            // Blockiere Scrollen wenn ein Widget berührt, gezogen oder resized wird
-            if (_isWidgetBeingTouched || _currentDragWidget != null || _currentResizeWidget != null) {
-              // Debug info
-              // Blocking scroll
-              return true; // true = Notification konsumiert, kein Scrollen
-            }
-            return false; // false = normal scrollen
-          },
-          child: isPortrait 
+        child: isPortrait 
             ? SingleChildScrollView(
                 controller: _scrollController,
                 scrollDirection: Axis.vertical,
-                physics: isEditMode && (_isWidgetBeingTouched || _currentDragWidget != null)
+                // BEGRÜNDUNG: Erlaubt programmatisches Scrollen, auch wenn ein Widget gezogen wird.
+                physics: isEditMode && _isWidgetBeingTouched
                       ? const NeverScrollableScrollPhysics() 
                       : const AlwaysScrollableScrollPhysics(),
                 child: Container(
@@ -2061,8 +2074,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                   height: gridHeight < minHeight ? minHeight : gridHeight,
                   child: Stack(
                   children: [
-                    // Grid-Hintergrund - immer sichtbar für bessere Struktur
-                    _buildGridBackground(),
+                    // Grid-Hintergrund - nur im Edit-Modus sichtbar
+                    if (isEditMode) _buildGridBackground(),
                     
                     // Vorschau-Rechteck beim Verschieben
                     if (_currentDragWidget != null && _dragPreviewPosition != null)
@@ -2126,27 +2139,34 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                   ],
                 ),
               ))
-            : NotificationListener<ScrollNotification>(
-                onNotification: (scrollNotification) {
-                  // Blockiere Scrollen wenn ein Widget berührt, gezogen oder resized wird
-                  if (_isWidgetBeingTouched || _currentDragWidget != null || _currentResizeWidget != null) {
-                    return true; // Block scrolling
-                  }
-                  return false;
-                },
-                child: SingleChildScrollView(
+            : SingleChildScrollView(
                     controller: _horizontalScrollController,
                     scrollDirection: Axis.horizontal,
-                    physics: isEditMode && (_isWidgetBeingTouched || _currentDragWidget != null)
+                    // BEGRÜNDUNG: Erlaubt programmatisches Scrollen, auch wenn ein Widget gezogen wird.
+                    physics: isEditMode && _isWidgetBeingTouched
                         ? const NeverScrollableScrollPhysics() 
                         : const AlwaysScrollableScrollPhysics(),
                     child: Container(
-                    width: math.max(gridWidth, MediaQuery.of(context).size.width - 16),
+                    // Berechne die effektive Breite basierend auf den Widgets im Landscape-Modus
+                    // Wichtig: Die Breite muss größer als der Viewport sein, damit Scrollen möglich ist
+                    width: () {
+                      final calculatedWidth = (gridColumns * (cellWidth + WidgetGridManager.cellSpacing)) + WidgetGridManager.cellSpacing;
+                      final viewportWidth = MediaQuery.of(context).size.width - 16;
+                      
+                      // Im Edit-Modus oder wenn Widgets außerhalb des sichtbaren Bereichs sind
+                      if (isEditMode) {
+                        return math.max(calculatedWidth, viewportWidth);
+                      } else {
+                        // Im Normal-Modus: Breite basierend auf dem rechtesten Widget
+                        final neededWidth = ((maxCol + 3) * (cellWidth + WidgetGridManager.cellSpacing)) + WidgetGridManager.cellSpacing;
+                        return math.max(neededWidth, viewportWidth);
+                      }
+                    }(),
                     height: gridHeight < minHeight ? minHeight : gridHeight,
                     child: Stack(
                     children: [
-                      // Grid-Hintergrund - immer sichtbar für bessere Struktur
-                      _buildGridBackground(),
+                      // Grid-Hintergrund - nur im Edit-Modus sichtbar
+                      if (isEditMode) _buildGridBackground(),
                       
                       // Vorschau-Rechteck beim Verschieben
                       if (_currentDragWidget != null && _dragPreviewPosition != null)
@@ -2216,9 +2236,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               ),
           ),
         ),
-      ),
-    ),
-  );
+      );
   }
   
   Widget _buildGridBackground() {
@@ -2377,103 +2395,112 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             }
           }
           
-          _dragStartScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+          // Setze den korrekten Scroll-Offset basierend auf der Orientierung
+          final orientation = MediaQuery.of(context).orientation;
+          final isPortrait = orientation == Orientation.portrait;
+          
+          _dragStartScrollOffset = isPortrait 
+              ? (_scrollController.hasClients ? _scrollController.offset : 0.0)
+              : (_horizontalScrollController.hasClients ? _horizontalScrollController.offset : 0.0);
           
           // Setze initiale dragOffset auf aktuelle Position
           model.dragOffset = Offset(
             model.position!.x.toDouble(),
             model.position!.y.toDouble(),
           );
+          
+          // Starte Auto-Scroll gleich beim Start
+          _startAutoScroll(details.globalPosition.dy, dragPositionX: details.globalPosition.dx);
         },
         onPanUpdate: (details) {
           if (!isEditMode || !model.isBeingDragged || _currentDragWidget != model) return;
-          
-          // Performance: Debug print removed
-          
+
           if (_dragStartPosition != null && _dragStartGridPosition != null) {
             // Kompensiere für Scroll-Offset-Änderungen
-            final currentScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
-            final scrollDelta = currentScrollOffset - _dragStartScrollOffset;
-            
-            final delta = details.globalPosition - _dragStartPosition! + Offset(0, scrollDelta);
-            // Performance: Debug print removed
-            
-            // Berechne aktuelle Zellengröße
             final orientation = MediaQuery.of(context).orientation;
             final isPortrait = orientation == Orientation.portrait;
+            
+            final currentScrollOffset = isPortrait 
+                ? (_scrollController.hasClients ? _scrollController.offset : 0.0)
+                : (_horizontalScrollController.hasClients ? _horizontalScrollController.offset : 0.0);
+            final scrollDelta = currentScrollOffset - _dragStartScrollOffset;
+            
+            final delta = details.globalPosition - _dragStartPosition! + Offset(
+              isPortrait ? 0 : scrollDelta,
+              isPortrait ? scrollDelta : 0,
+            );
+            
             final currentGridColumns = WidgetGridManager.getResponsiveGridColumns(context);
             final screenWidth = MediaQuery.of(context).size.width;
-            final gridWidth = screenWidth - 32;
-            final cellWidth = (gridWidth - WidgetGridManager.cellSpacing) / currentGridColumns - WidgetGridManager.cellSpacing;
+            final gridWidth = screenWidth - 16;
+            final totalSpacing = WidgetGridManager.cellSpacing * (currentGridColumns + 1);
+            final cellWidth = (gridWidth - totalSpacing) / currentGridColumns;
             final cellHeight = isPortrait ? cellWidth : WidgetGridManager.cellSize;
-            
-            // Stufenloses Verschieben - Widget folgt dem Finger genau
+
             final exactX = _dragStartGridPosition!.x + (delta.dx / (cellWidth + WidgetGridManager.cellSpacing));
             final exactY = _dragStartGridPosition!.y + (delta.dy / (cellHeight + WidgetGridManager.cellSpacing));
+
+            // Harte Grenze bei 50 Zeilen
+            final maxAllowedRow = 50 - model.gridHeight;
             
-            // Performance: Debug print removed
+            // Beschränke exactY auf die maximale erlaubte Position
+            final clampedExactY = exactY.clamp(0.0, maxAllowedRow.toDouble());
             
-            // Berechne die nächste Grid-Position für die Vorschau (wo es einrasten wird)
+            // Berechne die nächste Grid-Position für die Vorschau
             final previewX = exactX.round().clamp(0, currentGridColumns - model.gridWidth);
-            final previewY = exactY.round().clamp(0, _currentGridRows - 1);
+            final previewY = clampedExactY.round().clamp(0, math.min(_currentGridRows - 1, maxAllowedRow));
             
             final previewPosition = GridPosition(x: previewX.toInt(), y: previewY.toInt());
             
-            // Nur setState aufrufen wenn sich wirklich etwas geändert hat
-            bool needsUpdate = false;
-            
-            // Erweitere Grid wenn nötig
+            // Erweitere Grid wenn nötig (aber nur bis zur maximalen Position)
             if (previewY >= _currentGridRows - 2 && _currentGridRows < 50) {
-              // Verzögere setState um Performance zu verbessern
-              Future.microtask(() {
-                if (mounted) {
-                  setState(() {
-                    _currentGridRows = math.min(_currentGridRows + 5, 50); // Füge 5 Zeilen hinzu
-                  });
-                }
+              setState(() {
+                _currentGridRows = math.min(_currentGridRows + 1, 50);
               });
             }
             
-            // Zeige Warnung wenn am unteren Limit
-            if (previewY >= 48 && (_dragPreviewPosition?.y ?? 0) < 48) {
+            // Zeige Warnung wenn versucht wird, über die Grenze zu ziehen
+            if (exactY > maxAllowedRow && !_maxRowsWarningShown) {
+              _maxRowsWarningShown = true;
+              
+              // Haptisches Feedback für "harte Grenze"
+              HapticFeedback.heavyImpact();
+              
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Maximale Anzahl von 50 Zeilen erreicht'),
+                  content: Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text('Maximale Anzahl von 50 Zeilen erreicht!'),
+                    ],
+                  ),
                   duration: Duration(seconds: 2),
-                  backgroundColor: Colors.orange,
+                  backgroundColor: Colors.orange.shade700,
+                  behavior: SnackBarBehavior.floating,
+                  margin: EdgeInsets.only(bottom: 80, left: 16, right: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               );
             }
-            
-            // Vorschau zeigt, wo das Widget einrasten wird
-            if (WidgetGridManager.isValidPosition(openTabs[tabIndex].widgets, model, previewPosition)) {
-              if (_dragPreviewPosition?.x != previewPosition.x || _dragPreviewPosition?.y != previewPosition.y) {
+
+            setState(() {
+              // Nur die Vorschau-Position aktualisieren, wenn die Position gültig ist (keine Kollision)
+              if (WidgetGridManager.isValidPosition(openTabs[tabIndex].widgets, model, previewPosition)) {
                 _dragPreviewPosition = previewPosition;
-                needsUpdate = true;
-                // Preview position updated
               }
-            }
-            
-            // Widget bewegt sich stufenlos mit dem Finger
-            final newDragOffset = Offset(
-              exactX.clamp(0.0, (currentGridColumns - model.gridWidth).toDouble()),
-              exactY.clamp(0.0, (_currentGridRows - 1).toDouble()),
-            );
-            
-            if (model.dragOffset?.dx != newDragOffset.dx || model.dragOffset?.dy != newDragOffset.dy) {
-              model.dragOffset = newDragOffset;
-              needsUpdate = true;
-              // DragOffset updated
-            }
-            
-            if (needsUpdate) {
-              setState(() {});
-            }
-            
-            // Auto-Scroll wenn nah am Rand
+              
+              // Widget stoppt hart an der Grenze
+              model.dragOffset = Offset(
+                exactX.clamp(0.0, (currentGridColumns - model.gridWidth).toDouble()),
+                clampedExactY,
+              );
+            });
+
+            // Rufe die korrigierte Auto-Scroll-Funktion auf
             _startAutoScroll(details.globalPosition.dy, dragPositionX: details.globalPosition.dx);
-          } else {
-            print("DEBUG: WARNING - _dragStartPosition or _dragStartGridPosition is null!");
           }
         },
         onPanEnd: (_) {
@@ -2495,6 +2522,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           _currentDragWidget = null;
           _dragPreviewPosition = null;
           _setWidgetBeingTouched(false); // Reset touch state
+          _maxRowsWarningShown = false; // Reset warning flag
           
           // Stoppe Auto-Scroll
           _stopAutoScroll();
@@ -2688,13 +2716,16 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                           right: -10,
                           bottom: -10,
                           child: GestureDetector(
+                            behavior: HitTestBehavior.opaque, // Wichtig: Events nicht durchlassen
                             onPanStart: (details) {
                               setState(() {
                                 model.isResizing = true;
                                 model.isBeingDragged = false;
+                                _currentDragWidget = null; // Explizit Drag abbrechen
                                 _resizeStartPosition = details.globalPosition;
                                 _originalWidgetSize = model.size;
                                 _currentResizeWidget = model;
+                                _setWidgetBeingTouched(true); // Scrolling blockieren beim Resize
                               });
                               HapticFeedback.selectionClick();
                             },
@@ -2709,6 +2740,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                                 _resizeStartPosition = null;
                                 _originalWidgetSize = null;
                                 _currentResizeWidget = null;
+                                _setWidgetBeingTouched(false); // Scrolling wieder erlauben
                               });
                               HapticFeedback.mediumImpact();
                             },
@@ -2792,51 +2824,122 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
 }
   
   void _handleWidgetResize(AnalysisWidgetModel widget, DragUpdateDetails details, int tabIndex) {
-    if (_resizeStartPosition == null) return;
+    if (_resizeStartPosition == null || _originalWidgetSize == null) return;
     
-    // Berechne die Drag-Distanz seit Start (global position für bessere Genauigkeit)
+    // Berechne die Drag-Distanz seit Start
     final dragDelta = details.globalPosition - _resizeStartPosition!;
     
-    // Vereinfachte Resize-Logik: diagonal ziehen für Größenänderung
-    final diagonalDistance = (dragDelta.dx + dragDelta.dy) / 2;
+    // Schwellenwerte für Größenänderung
+    const gridStepThreshold = 40.0; // Pixel pro Grid-Schritt
     
-    // Niedrigere Mindestdistanz für schnelleres Ansprechen
-    const minDragDistance = 30.0;
+    // Berechne gewünschte Breiten- und Höhenänderung basierend auf Drag-Richtung
+    final widthSteps = (dragDelta.dx / gridStepThreshold).round();
+    final heightSteps = (dragDelta.dy / gridStepThreshold).round();
     
-    // Berechne die gewünschte Größenänderung basierend auf der Drag-Distanz
-    final currentSizeIndex = widget.availableSizes.indexOf(widget.size);
+    // Aktuelle Größe analysieren
+    final currentWidth = widget.gridWidth;
+    final currentHeight = widget.gridHeight;
+    final originalWidth = _getWidgetWidth(_originalWidgetSize!);
+    final originalHeight = _getWidgetHeight(_originalWidgetSize!);
     
-    // Bestimme Richtung basierend auf der diagonalen Distanz
-    if (diagonalDistance.abs() > minDragDistance) {
-      int newIndex;
+    // Neue Breite und Höhe berechnen
+    final newWidth = (originalWidth + widthSteps).clamp(1, 4);
+    final newHeight = (originalHeight + heightSteps).clamp(1, 4);
+    
+    // Finde die beste passende Größe
+    AnalysisWidgetSize? bestSize = _findBestSize(newWidth, newHeight);
+    
+    if (bestSize != null && bestSize != widget.size) {
+      // Setze neue Größe temporär
+      final originalSize = widget.size;
+      widget.size = bestSize;
       
-      if (diagonalDistance > 0) {
-        // Nach rechts unten ziehen = größer
-        newIndex = (currentSizeIndex + 1).clamp(0, widget.availableSizes.length - 1);
+      // Prüfe ob die neue Größe gültig ist
+      if (!WidgetGridManager.isValidPosition(openTabs[tabIndex].widgets, widget, widget.position!)) {
+        // Zurücksetzen wenn nicht gültig
+        widget.size = originalSize;
       } else {
-        // Nach links oben ziehen = kleiner
-        newIndex = (currentSizeIndex - 1).clamp(0, widget.availableSizes.length - 1);
-      }
-      
-      if (newIndex != currentSizeIndex) {
-        final newSize = widget.availableSizes[newIndex];
-        
-        // Setze neue Größe wenn gültig
-        final originalSize = widget.size;
-        widget.size = newSize;
-        
-        // Prüfe ob die neue Größe gültig ist
-        if (!WidgetGridManager.isValidPosition(openTabs[tabIndex].widgets, widget, widget.position!)) {
-          // Zurücksetzen wenn nicht gültig
-          widget.size = originalSize;
-        } else {
-          setState(() {});
-          HapticFeedback.lightImpact();
-          // Reset für nächste Größenänderung
-          _resizeStartPosition = details.globalPosition;
-        }
+        setState(() {});
+        HapticFeedback.lightImpact();
       }
     }
+  }
+  
+  int _getWidgetWidth(AnalysisWidgetSize size) {
+    switch (size) {
+      case AnalysisWidgetSize.smallSquare:
+      case AnalysisWidgetSize.tallRectangle:
+      case AnalysisWidgetSize.extraTall:
+        return 1;
+      case AnalysisWidgetSize.wideRectangle:
+      case AnalysisWidgetSize.largeSquare:
+        return 2;
+      case AnalysisWidgetSize.extraWide:
+      case AnalysisWidgetSize.huge:
+        return 3;
+      case AnalysisWidgetSize.giant:
+      case AnalysisWidgetSize.massive:
+      case AnalysisWidgetSize.fullWidth:
+        return 4;
+    }
+  }
+  
+  int _getWidgetHeight(AnalysisWidgetSize size) {
+    switch (size) {
+      case AnalysisWidgetSize.smallSquare:
+      case AnalysisWidgetSize.wideRectangle:
+      case AnalysisWidgetSize.extraWide:
+        return 1;
+      case AnalysisWidgetSize.tallRectangle:
+      case AnalysisWidgetSize.largeSquare:
+      case AnalysisWidgetSize.huge:
+      case AnalysisWidgetSize.giant:
+        return 2;
+      case AnalysisWidgetSize.extraTall:
+      case AnalysisWidgetSize.massive:
+        return 3;
+      case AnalysisWidgetSize.fullWidth:
+        return 4;
+    }
+  }
+  
+  AnalysisWidgetSize? _findBestSize(int targetWidth, int targetHeight) {
+    // Finde die Größe, die am besten zu den Zielmaßen passt
+    final sizes = [
+      AnalysisWidgetSize.smallSquare,   // 1x1
+      AnalysisWidgetSize.tallRectangle, // 1x2
+      AnalysisWidgetSize.wideRectangle, // 2x1
+      AnalysisWidgetSize.largeSquare,   // 2x2
+      AnalysisWidgetSize.extraWide,     // 3x1
+      AnalysisWidgetSize.extraTall,     // 1x3
+      AnalysisWidgetSize.huge,          // 3x2
+      AnalysisWidgetSize.giant,         // 4x2
+      AnalysisWidgetSize.massive,       // 4x3
+      AnalysisWidgetSize.fullWidth,     // 4x4
+    ];
+    
+    for (var size in sizes) {
+      if (_getWidgetWidth(size) == targetWidth && _getWidgetHeight(size) == targetHeight) {
+        return size;
+      }
+    }
+    
+    // Wenn keine exakte Übereinstimmung, finde die nächstbeste
+    AnalysisWidgetSize? closestSize;
+    int minDifference = 999;
+    
+    for (var size in sizes) {
+      final widthDiff = (_getWidgetWidth(size) - targetWidth).abs();
+      final heightDiff = (_getWidgetHeight(size) - targetHeight).abs();
+      final totalDiff = widthDiff + heightDiff;
+      
+      if (totalDiff < minDifference) {
+        minDifference = totalDiff;
+        closestSize = size;
+      }
+    }
+    
+    return closestSize;
   }
   
   // Hilfsvariablen für Resize
@@ -2866,6 +2969,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   
   // Grid-Zeilen Management
   int _currentGridRows = 10; // Start mit 10 Zeilen
+  bool _maxRowsWarningShown = false; // Flag für die Warnung bei max Zeilen
   
   void _setWidgetBeingTouched(bool value) {
     if (_isWidgetBeingTouched != value) {
@@ -2885,74 +2989,43 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   
   void _startAutoScroll(double dragPositionY, {double? dragPositionX}) {
     _autoScrollTimer?.cancel();
-    
-    // Berechne die Viewport-Grenzen
+
     final viewportHeight = MediaQuery.of(context).size.height;
     final viewportWidth = MediaQuery.of(context).size.width;
-    final orientation = MediaQuery.of(context).orientation;
-    final isPortrait = orientation == Orientation.portrait;
-    
-    // Definiere die Scroll-Zonen (obere und untere 100 Pixel)
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+
     const edgeThreshold = 100.0;
     const scrollSpeed = 15.0;
-    
+
     double scrollDeltaY = 0.0;
     double scrollDeltaX = 0.0;
-    
-    if (isPortrait) {
-      // Vertikales Scrolling im Portrait-Modus
-      final scrollPosition = _scrollController.position;
-      final currentScroll = scrollPosition.pixels;
-      
-      // Prüfe ob wir am oberen Rand sind
-      if (dragPositionY < edgeThreshold && currentScroll > 0) {
-        scrollDeltaY = -scrollSpeed * ((edgeThreshold - dragPositionY) / edgeThreshold);
-      }
-      // Prüfe ob wir am unteren Rand sind
-      else if (dragPositionY > viewportHeight - edgeThreshold) {
+
+    if (isPortrait && _scrollController.hasClients) {
+      if (dragPositionY < edgeThreshold) {
+        scrollDeltaY = -scrollSpeed * (1 - dragPositionY / edgeThreshold);
+      } else if (dragPositionY > viewportHeight - edgeThreshold) {
         scrollDeltaY = scrollSpeed * ((dragPositionY - (viewportHeight - edgeThreshold)) / edgeThreshold);
       }
-    } else if (dragPositionX != null) {
-      // Horizontales Scrolling im Landscape-Modus
-      final scrollPosition = _horizontalScrollController.position;
-      final currentScroll = scrollPosition.pixels;
-      
-      // Prüfe ob wir am linken Rand sind
-      if (dragPositionX < edgeThreshold && currentScroll > 0) {
-        scrollDeltaX = -scrollSpeed * ((edgeThreshold - dragPositionX) / edgeThreshold);
-      }
-      // Prüfe ob wir am rechten Rand sind
-      else if (dragPositionX > viewportWidth - edgeThreshold) {
+    } else if (!isPortrait && _horizontalScrollController.hasClients && dragPositionX != null) {
+      if (dragPositionX < edgeThreshold) {
+        scrollDeltaX = -scrollSpeed * (1 - dragPositionX / edgeThreshold);
+      } else if (dragPositionX > viewportWidth - edgeThreshold) {
         scrollDeltaX = scrollSpeed * ((dragPositionX - (viewportWidth - edgeThreshold)) / edgeThreshold);
       }
     }
-    
-    if (scrollDeltaY != 0 || scrollDeltaX != 0) {
+
+    if (scrollDeltaY != 0.0 || scrollDeltaX != 0.0) {
       _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-        if (isPortrait && scrollDeltaY != 0) {
-          if (!_scrollController.hasClients) {
-            timer.cancel();
-            return;
-          }
-          
-          final scrollPosition = _scrollController.position;
-          final newScroll = _scrollController.offset + scrollDeltaY;
-          
-          _scrollController.jumpTo(
-            newScroll.clamp(0.0, scrollPosition.maxScrollExtent)
-          );
-        } else if (!isPortrait && scrollDeltaX != 0) {
-          if (!_horizontalScrollController.hasClients) {
-            timer.cancel();
-            return;
-          }
-          
-          final scrollPosition = _horizontalScrollController.position;
-          final newScroll = _horizontalScrollController.offset + scrollDeltaX;
-          
-          _horizontalScrollController.jumpTo(
-            newScroll.clamp(0.0, scrollPosition.maxScrollExtent)
-          );
+        if (_currentDragWidget == null) {
+          timer.cancel();
+          return;
+        }
+        if (isPortrait && _scrollController.hasClients) {
+          final pos = _scrollController.position;
+          _scrollController.jumpTo((_scrollController.offset + scrollDeltaY).clamp(pos.minScrollExtent, pos.maxScrollExtent));
+        } else if (!isPortrait && _horizontalScrollController.hasClients) {
+          final pos = _horizontalScrollController.position;
+          _horizontalScrollController.jumpTo((_horizontalScrollController.offset + scrollDeltaX).clamp(pos.minScrollExtent, pos.maxScrollExtent));
         }
       });
     }
