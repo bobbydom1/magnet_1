@@ -141,20 +141,16 @@ class WidgetGridManager {
   // Berechne Spaltenanzahl basierend auf Bildschirmbreite
   static int getResponsiveGridColumns(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final orientation = MediaQuery.of(context).orientation;
+    final screenHeight = MediaQuery.of(context).size.height;
     
-    if (orientation == Orientation.portrait) {
-      // In Portrait: Berechne Spalten basierend auf verfügbarer Breite
-      final availableWidth = screenWidth - 16; // 8px padding auf jeder Seite
-      final columnWidth = cellSize + cellSpacing;
-      return math.max(2, (availableWidth / columnWidth).floor());
-    } else {
-      // In Landscape: Mehr Spalten für horizontales Scrollen
-      final availableWidth = screenWidth - 16;
-      final columnWidth = cellSize + cellSpacing;
-      // Mindestens 6 Spalten im Landscape, damit Scrollen möglich ist
-      return math.max(6, (availableWidth / columnWidth).floor());
-    }
+    // Verwende die kleinere Dimension (normalerweise die Breite im Portrait)
+    // um die Spaltenanzahl zu bestimmen, damit sie konstant bleibt
+    final referenceWidth = math.min(screenWidth, screenHeight);
+    final availableWidth = referenceWidth - 16; // 8px padding auf jeder Seite
+    final columnWidth = cellSize + cellSpacing;
+    
+    // Behalte die gleiche Anzahl von Spalten in beiden Orientierungen
+    return math.max(2, (availableWidth / columnWidth).floor());
   }
   
   // Findet eine freie Position im Grid
@@ -266,7 +262,7 @@ class GridBackgroundPainter extends CustomPainter {
         // Zell-Hintergrund
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(x, y, cellWidth, cellHeight),
-          Radius.circular(16), // Gleicher Radius wie Widgets
+          Radius.circular(20), // Gleicher Radius wie Widgets
         );
         
         canvas.drawRRect(rect, cellPaint);
@@ -1209,20 +1205,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       }
     });
     
-    _horizontalScrollController.addListener(() {
-      // BEGRÜNDUNG: Die Sperre wird nur noch aktiv, wenn kein Widget gezogen wird (_currentDragWidget == null).
-      if (_isWidgetBeingTouched && _currentDragWidget == null && _lockedHorizontalScrollPosition != null) {
-        if (_horizontalScrollController.offset != _lockedHorizontalScrollPosition) {
-          _horizontalScrollController.jumpTo(_lockedHorizontalScrollPosition!);
-        }
-      }
-    });
     
     // Initialisiere Orientierung und Grid-Zeilen
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Initialisiere Orientierung korrekt
-      final orientation = MediaQuery.of(context).orientation;
-      _isPortrait = orientation == Orientation.portrait;
       
       // Setze initiale Grid-Zeilen basierend auf vorhandenen Widgets
       int maxRow = 0;
@@ -1246,7 +1231,6 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   @override
   void dispose() {
     _scrollController.dispose();
-    _horizontalScrollController.dispose();
     _autoScrollTimer?.cancel();
     super.dispose();
   }
@@ -1852,15 +1836,94 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                     ),
                 
                 
-                // Add Widget Button (nur im Edit-Mode)
+                // Edit Mode Buttons
                 if (activeTab.isEditMode)
                   Positioned(
                     bottom: 16,
                     right: 16,
-                    child: FloatingActionButton(
-                      onPressed: () => _showAddWidgetDialog(activeTabIndex),
-                      backgroundColor: Colors.blue,
-                      child: const Icon(Icons.add, color: Colors.white),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Fertig Button
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: () {
+                            setState(() {
+                              activeTab.isEditMode = false;
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: CupertinoColors.systemGreen,
+                              borderRadius: BorderRadius.circular(25),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: CupertinoColors.systemGreen.withOpacity(0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: const [
+                                Icon(
+                                  CupertinoIcons.check_mark_circled_solid,
+                                  color: CupertinoColors.white,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Fertig',
+                                  style: TextStyle(
+                                    color: CupertinoColors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Widget hinzufügen Button
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: () => _showAddWidgetDialog(activeTabIndex),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: CupertinoColors.activeBlue,
+                              borderRadius: BorderRadius.circular(25),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: CupertinoColors.activeBlue.withOpacity(0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: const [
+                                Icon(
+                                  CupertinoIcons.plus_circle_fill,
+                                  color: CupertinoColors.white,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Widget',
+                                  style: TextStyle(
+                                    color: CupertinoColors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],
@@ -1959,11 +2022,6 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     final isPortrait = orientation == Orientation.portrait;
     final gridColumns = WidgetGridManager.getResponsiveGridColumns(context);
     
-    // Orientierungswechsel erkennen
-    if (isPortrait != _isPortrait) {
-      _handleOrientationChange(isPortrait, widgets, tabIndex);
-      _isPortrait = isPortrait;
-    }
     
     // Stelle sicher, dass alle Widgets Positionen haben
     for (var widget in widgets) {
@@ -2013,7 +2071,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     // Bessere Formel: (verfügbare Breite - Gesamtspacing) / Anzahl Spalten
     final totalSpacing = WidgetGridManager.cellSpacing * (gridColumns + 1);
     final cellWidth = (gridWidth - totalSpacing) / gridColumns;
-    final cellHeight = isPortrait ? cellWidth : WidgetGridManager.cellSize; // In Portrait quadratisch, in Landscape fixe Höhe
+    final cellHeight = cellWidth * 0.75; // Rechteckige Zellen (4:3 Verhältnis)
     
     return GestureDetector(
       // Blockiere horizontale Swipes wenn Widget berührt wird
@@ -2023,7 +2081,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       child: Container(
         padding: const EdgeInsets.only(left: 8, top: 8, right: 8, bottom: 8),
         child: Listener(
-        onPointerDown: (event) {
+          onPointerDown: (event) {
           if (isEditMode) {
             // Prüfe ob der Touch auf einem Widget ist
             final localPosition = event.localPosition - const Offset(8, 8); // Padding abziehen
@@ -2035,12 +2093,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                 final widgetRight = widgetLeft + widget.gridWidth * cellWidth + (widget.gridWidth - 1) * WidgetGridManager.cellSpacing;
                 final widgetBottom = widgetTop + widget.gridHeight * cellHeight + (widget.gridHeight - 1) * WidgetGridManager.cellSpacing;
                 
-                // Berücksichtige Scroll-Offset je nach Orientierung
+                // Berücksichtige Scroll-Offset
                 final verticalScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
-                final horizontalScrollOffset = _horizontalScrollController.hasClients ? _horizontalScrollController.offset : 0.0;
                 
-                // Immer beide Scroll-Offsets berücksichtigen, falls vorhanden
-                final adjustedX = localPosition.dx + horizontalScrollOffset;
+                // Nur vertikales Scrolling berücksichtigen
+                final adjustedX = localPosition.dx;
                 final adjustedY = localPosition.dy + verticalScrollOffset;
                 
                 if (adjustedX >= widgetLeft && 
@@ -2054,26 +2111,25 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             }
             _setWidgetBeingTouched(false);
           }
-        },
-        onPointerUp: (_) {
-          _setWidgetBeingTouched(false);
-        },
-        onPointerCancel: (_) {
-          _setWidgetBeingTouched(false);
-        },
-        child: isPortrait 
-            ? SingleChildScrollView(
-                controller: _scrollController,
-                scrollDirection: Axis.vertical,
-                // BEGRÜNDUNG: Erlaubt programmatisches Scrollen, auch wenn ein Widget gezogen wird.
-                physics: isEditMode && _isWidgetBeingTouched
-                      ? const NeverScrollableScrollPhysics() 
-                      : const AlwaysScrollableScrollPhysics(),
-                child: Container(
-                  width: double.infinity,
-                  height: gridHeight < minHeight ? minHeight : gridHeight,
-                  child: Stack(
-                  children: [
+          },
+          onPointerUp: (_) {
+            _setWidgetBeingTouched(false);
+          },
+          onPointerCancel: (_) {
+            _setWidgetBeingTouched(false);
+          },
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            scrollDirection: Axis.vertical,
+            // BEGRÜNDUNG: Erlaubt programmatisches Scrollen, auch wenn ein Widget gezogen wird.
+            physics: isEditMode && _isWidgetBeingTouched
+                ? const NeverScrollableScrollPhysics() 
+                : const AlwaysScrollableScrollPhysics(),
+            child: Container(
+              width: double.infinity,
+              height: gridHeight < minHeight ? minHeight : gridHeight,
+              child: Stack(
+                children: [
                     // Grid-Hintergrund - nur im Edit-Modus sichtbar
                     if (isEditMode) _buildGridBackground(),
                     
@@ -2090,7 +2146,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                         child: Container(
                           decoration: BoxDecoration(
                             color: CupertinoColors.systemGreen.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(20),
                             border: Border.all(
                               color: CupertinoColors.systemGreen,
                               width: 2,
@@ -2137,107 +2193,13 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                       );
                     }).toList(),
                   ],
-                ),
-              ))
-            : SingleChildScrollView(
-                    controller: _horizontalScrollController,
-                    scrollDirection: Axis.horizontal,
-                    // BEGRÜNDUNG: Erlaubt programmatisches Scrollen, auch wenn ein Widget gezogen wird.
-                    physics: isEditMode && _isWidgetBeingTouched
-                        ? const NeverScrollableScrollPhysics() 
-                        : const AlwaysScrollableScrollPhysics(),
-                    child: Container(
-                    // Berechne die effektive Breite basierend auf den Widgets im Landscape-Modus
-                    // Wichtig: Die Breite muss größer als der Viewport sein, damit Scrollen möglich ist
-                    width: () {
-                      final calculatedWidth = (gridColumns * (cellWidth + WidgetGridManager.cellSpacing)) + WidgetGridManager.cellSpacing;
-                      final viewportWidth = MediaQuery.of(context).size.width - 16;
-                      
-                      // Im Edit-Modus oder wenn Widgets außerhalb des sichtbaren Bereichs sind
-                      if (isEditMode) {
-                        return math.max(calculatedWidth, viewportWidth);
-                      } else {
-                        // Im Normal-Modus: Breite basierend auf dem rechtesten Widget
-                        final neededWidth = ((maxCol + 3) * (cellWidth + WidgetGridManager.cellSpacing)) + WidgetGridManager.cellSpacing;
-                        return math.max(neededWidth, viewportWidth);
-                      }
-                    }(),
-                    height: gridHeight < minHeight ? minHeight : gridHeight,
-                    child: Stack(
-                    children: [
-                      // Grid-Hintergrund - nur im Edit-Modus sichtbar
-                      if (isEditMode) _buildGridBackground(),
-                      
-                      // Vorschau-Rechteck beim Verschieben
-                      if (_currentDragWidget != null && _dragPreviewPosition != null)
-                        AnimatedPositioned(
-                          duration: const Duration(milliseconds: 100),
-                          left: _dragPreviewPosition!.x * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing,
-                          top: _dragPreviewPosition!.y * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing,
-                          width: _currentDragWidget!.gridWidth * cellWidth + 
-                                 (_currentDragWidget!.gridWidth - 1) * WidgetGridManager.cellSpacing,
-                          height: _currentDragWidget!.gridHeight * cellHeight + 
-                                  (_currentDragWidget!.gridHeight - 1) * WidgetGridManager.cellSpacing,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: CupertinoColors.systemGreen.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: CupertinoColors.systemGreen,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                      
-                      // Widgets für Landscape
-                      ...widgets.asMap().entries.map((entry) {
-                final index = entry.key;
-                final widget = entry.value;
-                
-                if (widget.position == null) return Container();
-                
-                // Verwende dragOffset wenn das Widget gezogen wird, sonst die normale Position
-                final posX = widget.isBeingDragged && widget.dragOffset != null
-                    ? widget.dragOffset!.dx * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing
-                    : widget.position!.x * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
-                    
-                final posY = widget.isBeingDragged && widget.dragOffset != null
-                    ? widget.dragOffset!.dy * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing
-                    : widget.position!.y * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
-                
-                // Debug output entfernt um Performance zu verbessern
-                
-                return Positioned(
-                  left: posX,
-                  top: posY,
-                  width: widget.gridWidth * cellWidth + 
-                         (widget.gridWidth - 1) * WidgetGridManager.cellSpacing,
-                  height: widget.gridHeight * cellHeight + 
-                          (widget.gridHeight - 1) * WidgetGridManager.cellSpacing,
-                  child: AnimatedContainer(
-                    duration: widget.isBeingDragged 
-                        ? Duration.zero 
-                        : const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    child: _buildGridWidget(
-                      model: widget,
-                      tabIndex: tabIndex,
-                      widgetIndex: index,
-                      data: data,
-                      isEditMode: isEditMode,
-                    ),
-                  ),
-                );
-              }).toList(),
-                    ],
-                  ),
-                ),
               ),
+            ),
           ),
         ),
-      );
-  }
+      ),
+    );
+}
   
   Widget _buildGridBackground() {
     final orientation = MediaQuery.of(context).orientation;
@@ -2249,7 +2211,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     // Gleiche Formel wie in _buildWidgetGrid verwenden
     final totalSpacing = WidgetGridManager.cellSpacing * (gridColumns + 1);
     final cellWidth = (gridWidth - totalSpacing) / gridColumns;
-    final cellHeight = isPortrait ? cellWidth : WidgetGridManager.cellSize;
+    final cellHeight = cellWidth * 0.75; // Rechteckige Zellen (4:3 Verhältnis)
     
     return CustomPaint(
       size: Size.infinite,
@@ -2332,11 +2294,6 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               // Wichtig: Position merken für späteren Vergleich
               _lockedScrollPosition = _scrollController.offset;
             }
-            if (_horizontalScrollController.hasClients) {
-              _horizontalScrollController.jumpTo(_horizontalScrollController.offset);
-              // Wichtig: Position merken für späteren Vergleich  
-              _lockedHorizontalScrollPosition = _horizontalScrollController.offset;
-            }
           } catch (e) {
             // Error handling silent
           }
@@ -2348,7 +2305,6 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         if (isEditMode) {
           _setWidgetBeingTouched(false);
           _lockedScrollPosition = null;
-          _lockedHorizontalScrollPosition = null;
           // Pointer up - scroll unlocked
         }
       },
@@ -2356,7 +2312,6 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         if (isEditMode) {
           _setWidgetBeingTouched(false);
           _lockedScrollPosition = null;
-          _lockedHorizontalScrollPosition = null;
           // Pointer cancelled - scroll unlocked
         }
       },
@@ -2395,13 +2350,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             }
           }
           
-          // Setze den korrekten Scroll-Offset basierend auf der Orientierung
-          final orientation = MediaQuery.of(context).orientation;
-          final isPortrait = orientation == Orientation.portrait;
-          
-          _dragStartScrollOffset = isPortrait 
-              ? (_scrollController.hasClients ? _scrollController.offset : 0.0)
-              : (_horizontalScrollController.hasClients ? _horizontalScrollController.offset : 0.0);
+          // Setze den Scroll-Offset
+          _dragStartScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
           
           // Setze initiale dragOffset auf aktuelle Position
           model.dragOffset = Offset(
@@ -2417,25 +2367,17 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
 
           if (_dragStartPosition != null && _dragStartGridPosition != null) {
             // Kompensiere für Scroll-Offset-Änderungen
-            final orientation = MediaQuery.of(context).orientation;
-            final isPortrait = orientation == Orientation.portrait;
-            
-            final currentScrollOffset = isPortrait 
-                ? (_scrollController.hasClients ? _scrollController.offset : 0.0)
-                : (_horizontalScrollController.hasClients ? _horizontalScrollController.offset : 0.0);
+            final currentScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
             final scrollDelta = currentScrollOffset - _dragStartScrollOffset;
             
-            final delta = details.globalPosition - _dragStartPosition! + Offset(
-              isPortrait ? 0 : scrollDelta,
-              isPortrait ? scrollDelta : 0,
-            );
+            final delta = details.globalPosition - _dragStartPosition! + Offset(0, scrollDelta);
             
             final currentGridColumns = WidgetGridManager.getResponsiveGridColumns(context);
             final screenWidth = MediaQuery.of(context).size.width;
             final gridWidth = screenWidth - 16;
             final totalSpacing = WidgetGridManager.cellSpacing * (currentGridColumns + 1);
             final cellWidth = (gridWidth - totalSpacing) / currentGridColumns;
-            final cellHeight = isPortrait ? cellWidth : WidgetGridManager.cellSize;
+            final cellHeight = cellWidth * 0.75; // Rechteckige Zellen (4:3 Verhältnis)
 
             final exactX = _dragStartGridPosition!.x + (delta.dx / (cellWidth + WidgetGridManager.cellSpacing));
             final exactY = _dragStartGridPosition!.y + (delta.dy / (cellHeight + WidgetGridManager.cellSpacing));
@@ -2571,7 +2513,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           child: Container(
           decoration: BoxDecoration(
             color: CupertinoColors.systemBackground.resolveFrom(context),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
                 color: CupertinoColors.systemGrey.withOpacity(
@@ -2583,7 +2525,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             ],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             child: Stack(
               children: [
               // Widget-Inhalt
@@ -2818,7 +2760,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           ),
         ),
       ),
-      ),
+    ),
     ),
   );
 }
@@ -2955,16 +2897,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   bool _isWidgetBeingTouched = false;
   double _dragStartScrollOffset = 0.0;
   
-  // Orientierungs-Management
-  bool _isPortrait = true;
-  Map<String, Map<String, dynamic>> _portraitWidgetStates = {};
-  Map<String, Map<String, dynamic>> _landscapeWidgetStates = {};
-  
   // ScrollController für Auto-Scroll beim Drag
   ScrollController _scrollController = ScrollController();
-  ScrollController _horizontalScrollController = ScrollController();
   double? _lockedScrollPosition;
-  double? _lockedHorizontalScrollPosition;
   Timer? _autoScrollTimer;
   
   // Grid-Zeilen Management
@@ -2979,10 +2914,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       // Lock scroll positions when widget is touched
       if (value) {
         _lockedScrollPosition = _scrollController.hasClients ? _scrollController.offset : null;
-        _lockedHorizontalScrollPosition = _horizontalScrollController.hasClients ? _horizontalScrollController.offset : null;
       } else {
         _lockedScrollPosition = null;
-        _lockedHorizontalScrollPosition = null;
       }
     }
   }
@@ -2991,41 +2924,68 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     _autoScrollTimer?.cancel();
 
     final viewportHeight = MediaQuery.of(context).size.height;
-    final viewportWidth = MediaQuery.of(context).size.width;
-    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
-
-    const edgeThreshold = 100.0;
-    const scrollSpeed = 15.0;
+    const edgeThreshold = 80.0; // Reduziert für bessere Reaktion
+    const scrollSpeed = 10.0; // Sanftere Geschwindigkeit
 
     double scrollDeltaY = 0.0;
-    double scrollDeltaX = 0.0;
 
-    if (isPortrait && _scrollController.hasClients) {
+    // Auto-Scroll für beide Orientierungen (nur vertikal)
+    if (_scrollController.hasClients) {
+      // Oberer Rand
       if (dragPositionY < edgeThreshold) {
         scrollDeltaY = -scrollSpeed * (1 - dragPositionY / edgeThreshold);
-      } else if (dragPositionY > viewportHeight - edgeThreshold) {
+      } 
+      // Unterer Rand
+      else if (dragPositionY > viewportHeight - edgeThreshold) {
         scrollDeltaY = scrollSpeed * ((dragPositionY - (viewportHeight - edgeThreshold)) / edgeThreshold);
-      }
-    } else if (!isPortrait && _horizontalScrollController.hasClients && dragPositionX != null) {
-      if (dragPositionX < edgeThreshold) {
-        scrollDeltaX = -scrollSpeed * (1 - dragPositionX / edgeThreshold);
-      } else if (dragPositionX > viewportWidth - edgeThreshold) {
-        scrollDeltaX = scrollSpeed * ((dragPositionX - (viewportWidth - edgeThreshold)) / edgeThreshold);
       }
     }
 
-    if (scrollDeltaY != 0.0 || scrollDeltaX != 0.0) {
+    if (scrollDeltaY != 0.0) {
       _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-        if (_currentDragWidget == null) {
+        if (_currentDragWidget == null || !_currentDragWidget!.isBeingDragged) {
           timer.cancel();
           return;
         }
-        if (isPortrait && _scrollController.hasClients) {
+        
+        if (_scrollController.hasClients) {
           final pos = _scrollController.position;
-          _scrollController.jumpTo((_scrollController.offset + scrollDeltaY).clamp(pos.minScrollExtent, pos.maxScrollExtent));
-        } else if (!isPortrait && _horizontalScrollController.hasClients) {
-          final pos = _horizontalScrollController.position;
-          _horizontalScrollController.jumpTo((_horizontalScrollController.offset + scrollDeltaX).clamp(pos.minScrollExtent, pos.maxScrollExtent));
+          final oldOffset = _scrollController.offset;
+          final newOffset = (oldOffset + scrollDeltaY).clamp(pos.minScrollExtent, pos.maxScrollExtent);
+          
+          if (oldOffset != newOffset) {
+            setState(() {
+              _scrollController.jumpTo(newOffset);
+              
+              // Berechne wie viele Grid-Zellen gescrollt wurden
+              final scrollDelta = newOffset - oldOffset;
+              final currentGridColumns = WidgetGridManager.getResponsiveGridColumns(context);
+              final screenWidth = MediaQuery.of(context).size.width;
+              final gridWidth = screenWidth - 16;
+              final totalSpacing = WidgetGridManager.cellSpacing * (currentGridColumns + 1);
+              final cellWidth = (gridWidth - totalSpacing) / currentGridColumns;
+              final cellHeight = cellWidth * 0.75;
+              
+              // Konvertiere Pixel in Grid-Einheiten
+              final gridScrollDelta = scrollDelta / (cellHeight + WidgetGridManager.cellSpacing);
+              
+              // Bewege das Widget mit dem Scroll
+              if (_currentDragWidget!.dragOffset != null) {
+                _currentDragWidget!.dragOffset = Offset(
+                  _currentDragWidget!.dragOffset!.dx,
+                  _currentDragWidget!.dragOffset!.dy - gridScrollDelta
+                );
+                
+                // Update auch die Vorschau-Position
+                final previewY = _currentDragWidget!.dragOffset!.dy.round();
+                final previewX = _currentDragWidget!.dragOffset!.dx.round();
+                _dragPreviewPosition = GridPosition(
+                  x: previewX.clamp(0, currentGridColumns - _currentDragWidget!.gridWidth),
+                  y: previewY.clamp(0, 50 - _currentDragWidget!.gridHeight)
+                );
+              }
+            });
+          }
         }
       });
     }
@@ -3036,146 +2996,6 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     _autoScrollTimer = null;
   }
   
-  void _handleOrientationChange(bool isPortrait, List<AnalysisWidgetModel> widgets, int tabIndex) {
-    if (isPortrait) {
-      // Wechsel zu Portrait: Speichere Landscape-Zustand und lade Portrait-Zustand
-      _saveLandscapeState(widgets);
-      _loadPortraitState(widgets);
-    } else {
-      // Wechsel zu Landscape: Speichere Portrait-Zustand und lade Landscape-Zustand
-      _savePortraitState(widgets);
-      _loadLandscapeState(widgets);
-    }
-  }
-  
-  void _savePortraitState(List<AnalysisWidgetModel> widgets) {
-    _portraitWidgetStates.clear();
-    for (var widget in widgets) {
-      _portraitWidgetStates[widget.id] = {
-        'position': widget.position?.toJson(),
-        'size': widget.size.index,
-      };
-    }
-  }
-  
-  void _saveLandscapeState(List<AnalysisWidgetModel> widgets) {
-    _landscapeWidgetStates.clear();
-    for (var widget in widgets) {
-      _landscapeWidgetStates[widget.id] = {
-        'position': widget.position?.toJson(),
-        'size': widget.size.index,
-      };
-    }
-  }
-  
-  void _loadPortraitState(List<AnalysisWidgetModel> widgets) {
-    final gridColumns = WidgetGridManager.getResponsiveGridColumns(context);
-    
-    for (var widget in widgets) {
-      final state = _portraitWidgetStates[widget.id];
-      if (state != null) {
-        // Wiederherstellen der gespeicherten Position und Größe
-        if (state['position'] != null) {
-          widget.position = GridPosition.fromJson(state['position']);
-        }
-        widget.size = AnalysisWidgetSize.values[state['size']];
-      } else {
-        // Wenn kein gespeicherter Zustand, passe Widget an Portrait an
-        _adjustWidgetForPortrait(widget, gridColumns);
-      }
-    }
-    
-    // Reorganisiere Widgets falls nötig
-    _reorganizeWidgetsForGrid(widgets, gridColumns);
-  }
-  
-  void _loadLandscapeState(List<AnalysisWidgetModel> widgets) {
-    for (var widget in widgets) {
-      final state = _landscapeWidgetStates[widget.id];
-      if (state != null) {
-        // Wiederherstellen der gespeicherten Position und Größe
-        if (state['position'] != null) {
-          widget.position = GridPosition.fromJson(state['position']);
-        }
-        widget.size = AnalysisWidgetSize.values[state['size']];
-      }
-    }
-  }
-  
-  void _adjustWidgetForPortrait(AnalysisWidgetModel widget, int gridColumns) {
-    // Passe Widget-Größe an, wenn es zu breit für Portrait ist
-    if (widget.gridWidth > gridColumns) {
-      // Verkleinere das Widget
-      switch (widget.size) {
-        case AnalysisWidgetSize.giant:
-        case AnalysisWidgetSize.massive:
-        case AnalysisWidgetSize.fullWidth:
-          widget.size = AnalysisWidgetSize.largeSquare;
-          break;
-        case AnalysisWidgetSize.extraWide:
-        case AnalysisWidgetSize.huge:
-          widget.size = AnalysisWidgetSize.wideRectangle;
-          break;
-        default:
-          // Andere Größen sind okay
-          break;
-      }
-    }
-  }
-  
-  void _reorganizeWidgetsForGrid(List<AnalysisWidgetModel> widgets, int gridColumns) {
-    // Sortiere Widgets nach Position
-    widgets.sort((a, b) {
-      if (a.position == null || b.position == null) return 0;
-      final posA = a.position!.y * 100 + a.position!.x;
-      final posB = b.position!.y * 100 + b.position!.x;
-      return posA.compareTo(posB);
-    });
-    
-    // Reorganisiere Widgets, die außerhalb des Grids sind
-    for (var widget in widgets) {
-      if (widget.position != null && widget.position!.x + widget.gridWidth > gridColumns) {
-        // Widget passt nicht, finde neue Position
-        widget.position = _findNewPositionForWidget(widget, widgets, gridColumns);
-      }
-    }
-  }
-  
-  GridPosition? _findNewPositionForWidget(AnalysisWidgetModel widget, List<AnalysisWidgetModel> allWidgets, int gridColumns) {
-    // Erstelle Belegungsmatrix
-    var occupiedCells = <String>{};
-    
-    for (var w in allWidgets) {
-      if (w != widget && w.position != null) {
-        for (int x = w.position!.x; x < w.position!.x + w.gridWidth && x < gridColumns; x++) {
-          for (int y = w.position!.y; y < w.position!.y + w.gridHeight; y++) {
-            occupiedCells.add('$x,$y');
-          }
-        }
-      }
-    }
-    
-    // Suche freie Position
-    for (int y = 0; y < 100; y++) {
-      for (int x = 0; x <= gridColumns - widget.gridWidth; x++) {
-        bool canPlace = true;
-        for (int dx = 0; dx < widget.gridWidth; dx++) {
-          for (int dy = 0; dy < widget.gridHeight; dy++) {
-            if (occupiedCells.contains('${x + dx},${y + dy}')) {
-              canPlace = false;
-              break;
-            }
-          }
-          if (!canPlace) break;
-        }
-        if (canPlace) {
-          return GridPosition(x: x, y: y);
-        }
-      }
-    }
-    
-    return GridPosition(x: 0, y: 0);
-  }
   
   String _getSizeLabel(AnalysisWidgetSize size) {
     switch (size) {
@@ -4197,61 +4017,58 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     showCupertinoModalPopup(
       context: context,
       builder: (BuildContext context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.6,
-          decoration: BoxDecoration(
-            color: CupertinoColors.systemGroupedBackground.resolveFrom(context),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              children: [
-                // Handle Bar
-                Container(
-                  width: 36,
-                  height: 5,
-                  margin: const EdgeInsets.only(top: 12, bottom: 20),
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.systemGrey3.resolveFrom(context),
-                    borderRadius: BorderRadius.circular(2.5),
-                  ),
-                ),
-                // Title
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'WIDGET HINZUFÜGEN',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.08,
-                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                        ),
-                      ),
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        onPressed: () => Navigator.pop(context),
+        return GestureDetector(
+          onVerticalDragUpdate: (details) {
+            // Schließe Sheet wenn nach unten gezogen wird
+            if (details.primaryDelta! > 10) {
+              Navigator.pop(context);
+            }
+          },
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.6,
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemGroupedBackground.resolveFrom(context),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  // Handle Bar - jetzt interaktiv
+                  GestureDetector(
+                    onVerticalDragUpdate: (details) {
+                      if (details.primaryDelta! > 10) {
+                        Navigator.pop(context);
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.only(top: 12, bottom: 8),
+                      child: Center(
                         child: Container(
-                          width: 30,
-                          height: 30,
+                          width: 36,
+                          height: 5,
                           decoration: BoxDecoration(
-                            color: CupertinoColors.systemGrey5.resolveFrom(context),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            CupertinoIcons.xmark,
-                            size: 16,
-                            color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                            color: CupertinoColors.systemGrey3.resolveFrom(context),
+                            borderRadius: BorderRadius.circular(2.5),
                           ),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                  // Title - ohne X Button
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                    child: Text(
+                      'WIDGET HINZUFÜGEN',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.08,
+                        color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 20),
                 // Widget Options
                 Expanded(
@@ -4329,6 +4146,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               ],
             ),
           ),
+        ),
         );
       },
     );
@@ -4342,37 +4160,68 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     showCupertinoModalPopup(
       context: context,
       builder: (BuildContext context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: BoxDecoration(
-            color: CupertinoColors.systemGroupedBackground.resolveFrom(context),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              children: [
-                // Handle Bar
-                Container(
-                  width: 36,
-                  height: 5,
-                  margin: const EdgeInsets.only(top: 12, bottom: 20),
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.systemGrey3.resolveFrom(context),
-                    borderRadius: BorderRadius.circular(2.5),
+        return GestureDetector(
+          onVerticalDragUpdate: (details) {
+            // Schließe Sheet wenn nach unten gezogen wird
+            if (details.primaryDelta! > 10) {
+              Navigator.pop(context);
+            }
+          },
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.7,
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemGroupedBackground.resolveFrom(context),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  // Handle Bar - jetzt interaktiv
+                  GestureDetector(
+                    onVerticalDragUpdate: (details) {
+                      if (details.primaryDelta! > 10) {
+                        Navigator.pop(context);
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.only(top: 12, bottom: 8),
+                      child: Center(
+                        child: Container(
+                          width: 36,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: CupertinoColors.systemGrey3.resolveFrom(context),
+                            borderRadius: BorderRadius.circular(2.5),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-                // Title
+                // Title mit Abbrechen-Hinweis
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Text(
-                    'GRÖßE WÄHLEN',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.08,
-                      color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                    ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'GRÖßE WÄHLEN',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.08,
+                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Nach unten wischen zum Abbrechen',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -4453,7 +4302,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               ],
             ),
           ),
-        );
+        ),  // Container closing
+      );    // GestureDetector closing
       },
     );
   }
