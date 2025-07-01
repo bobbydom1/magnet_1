@@ -116,17 +116,20 @@ enum AnalysisWidgetSize {
   giant,         // 4x2 Kachel
   massive,       // 4x3 Kachel
   fullWidth,     // 4x4 Kachel
+  ultraWide,     // 5x3 Kachel
+  megaChart,     // 6x4 Kachel
+  maxChart,      // 8x6 Kachel
 }
 
 // Grid-Position für Widgets
 class GridPosition {
   int x;
   int y;
-  
+
   GridPosition({required this.x, required this.y});
-  
+
   Map<String, dynamic> toJson() => {'x': x, 'y': y};
-  
+
   factory GridPosition.fromJson(Map<String, dynamic> json) {
     return GridPosition(x: json['x'], y: json['y']);
   }
@@ -137,27 +140,27 @@ class WidgetGridManager {
   static const int gridColumns = 4;
   static const double cellSize = 80.0; // Reduziert von 100
   static const double cellSpacing = 8.0; // Reduziert von 12 für bessere Raumnutzung
-  
+
   // Berechne Spaltenanzahl basierend auf Bildschirmbreite
   static int getResponsiveGridColumns(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
-    
+
     // Verwende die kleinere Dimension (normalerweise die Breite im Portrait)
     // um die Spaltenanzahl zu bestimmen, damit sie konstant bleibt
     final referenceWidth = math.min(screenWidth, screenHeight);
     final availableWidth = referenceWidth - 16; // 8px padding auf jeder Seite
     final columnWidth = cellSize + cellSpacing;
-    
+
     // Behalte die gleiche Anzahl von Spalten in beiden Orientierungen
     return math.max(2, (availableWidth / columnWidth).floor());
   }
-  
+
   // Findet eine freie Position im Grid
   static GridPosition? findFreePosition(List<AnalysisWidgetModel> widgets, AnalysisWidgetModel newWidget) {
     // Erstelle eine Belegungsmatrix
     var occupiedCells = <String>{};
-    
+
     for (var widget in widgets) {
       if (widget.position != null) {
         for (int x = widget.position!.x; x < widget.position!.x + widget.gridWidth; x++) {
@@ -167,12 +170,12 @@ class WidgetGridManager {
         }
       }
     }
-    
+
     // Suche die erste freie Position
     for (int y = 0; y < 50; y++) { // Maximal 50 Zeilen
       for (int x = 0; x <= gridColumns - newWidget.gridWidth; x++) {
         bool canPlace = true;
-        
+
         // Prüfe ob alle benötigten Zellen frei sind
         for (int dx = 0; dx < newWidget.gridWidth; dx++) {
           for (int dy = 0; dy < newWidget.gridHeight; dy++) {
@@ -183,44 +186,44 @@ class WidgetGridManager {
           }
           if (!canPlace) break;
         }
-        
+
         if (canPlace) {
           return GridPosition(x: x, y: y);
         }
       }
     }
-    
+
     return null;
   }
-  
+
   // Berechnet die Höhe des Grids basierend auf der Anzahl der Zeilen
   static double calculateGridHeight(int rows) {
     return rows * (cellSize + cellSpacing) + cellSpacing;
   }
-  
+
   // Prüft ob eine Position gültig ist
   static bool isValidPosition(List<AnalysisWidgetModel> widgets, AnalysisWidgetModel widget, GridPosition newPosition) {
     // Prüfe Grid-Grenzen
-    if (newPosition.x < 0 || newPosition.y < 0 || 
+    if (newPosition.x < 0 || newPosition.y < 0 ||
         newPosition.x + widget.gridWidth > gridColumns) {
       return false;
     }
-    
+
     // Prüfe Kollisionen mit anderen Widgets
     for (var other in widgets) {
       if (other.id == widget.id || other.position == null) continue;
-      
+
       // Prüfe Überlappung
       bool overlapsX = newPosition.x < other.position!.x + other.gridWidth &&
-                      newPosition.x + widget.gridWidth > other.position!.x;
+          newPosition.x + widget.gridWidth > other.position!.x;
       bool overlapsY = newPosition.y < other.position!.y + other.gridHeight &&
-                      newPosition.y + widget.gridHeight > other.position!.y;
-      
+          newPosition.y + widget.gridHeight > other.position!.y;
+
       if (overlapsX && overlapsY) {
         return false;
       }
     }
-    
+
     return true;
   }
 }
@@ -230,49 +233,49 @@ class GridBackgroundPainter extends CustomPainter {
   final double cellWidth;
   final double cellHeight;
   final int gridColumns;
-  
+
   GridBackgroundPainter({
     required this.cellWidth,
     required this.cellHeight,
     required this.gridColumns,
   });
-  
+
   @override
   void paint(Canvas canvas, Size size) {
     const spacing = WidgetGridManager.cellSpacing;
     final gridSizeX = cellWidth + spacing;
     final gridSizeY = cellHeight + spacing;
-    
+
     // Hintergrund-Farbe für Grid-Zellen
     final cellPaint = Paint()
       ..color = CupertinoColors.systemGrey6.withOpacity(0.5)
       ..style = PaintingStyle.fill;
-    
+
     // Rahmen für Grid-Zellen
     final borderPaint = Paint()
       ..color = CupertinoColors.systemGrey4.withOpacity(0.5)
       ..strokeWidth = 1
       ..style = PaintingStyle.stroke;
-    
+
     // Zeichne Grid-Zellen - genau so viele Spalten wie definiert
     for (double y = spacing; y < size.height; y += gridSizeY) {
       for (int col = 0; col < gridColumns; col++) {
         final x = col * gridSizeX + spacing;
-        
+
         // Zell-Hintergrund
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(x, y, cellWidth, cellHeight),
           Radius.circular(20), // Gleicher Radius wie Widgets
         );
-        
+
         canvas.drawRRect(rect, cellPaint);
         canvas.drawRRect(rect, borderPaint);
       }
     }
-    
+
     // Spaltenbeschriftung entfernt - wird nicht benötigt
   }
-  
+
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
@@ -327,7 +330,7 @@ abstract class AnalysisWidgetModel {
   Offset? dragOffset;  // Für stufenloses Ziehen
   bool isBeingDragged;
   bool isResizing;
-  
+
   AnalysisWidgetModel({
     required this.id,
     required this.title,
@@ -337,7 +340,7 @@ abstract class AnalysisWidgetModel {
     this.isBeingDragged = false,
     this.isResizing = false,
   });
-  
+
   // Größe des Widgets im Grid
   int get gridWidth {
     switch (size) {
@@ -355,9 +358,15 @@ abstract class AnalysisWidgetModel {
       case AnalysisWidgetSize.massive:
       case AnalysisWidgetSize.fullWidth:
         return 4;
+      case AnalysisWidgetSize.ultraWide:
+        return 5;
+      case AnalysisWidgetSize.megaChart:
+        return 6;
+      case AnalysisWidgetSize.maxChart:
+        return 8;
     }
   }
-  
+
   int get gridHeight {
     switch (size) {
       case AnalysisWidgetSize.smallSquare:
@@ -371,12 +380,16 @@ abstract class AnalysisWidgetModel {
         return 2;
       case AnalysisWidgetSize.extraTall:
       case AnalysisWidgetSize.massive:
+      case AnalysisWidgetSize.ultraWide:
         return 3;
       case AnalysisWidgetSize.fullWidth:
+      case AnalysisWidgetSize.megaChart:
         return 4;
+      case AnalysisWidgetSize.maxChart:
+        return 6;
     }
   }
-  
+
   // Verfügbare Größen für Resize
   List<AnalysisWidgetSize> get availableSizes => [
     AnalysisWidgetSize.smallSquare,
@@ -389,6 +402,9 @@ abstract class AnalysisWidgetModel {
     AnalysisWidgetSize.giant,
     AnalysisWidgetSize.massive,
     AnalysisWidgetSize.fullWidth,
+    AnalysisWidgetSize.ultraWide,
+    AnalysisWidgetSize.megaChart,
+    AnalysisWidgetSize.maxChart,
   ];
 }
 
@@ -398,7 +414,11 @@ class ChartWidgetModel extends AnalysisWidgetModel {
   final bool showLegend;
   final int displayRange; // Zeitfenster in Sekunden
   final bool showTimeControls; // Neue Option für Zeitkontrollen
-  
+  final bool triggerEnabled;
+  final double? upperThreshold;
+  final double? lowerThreshold;
+  final double lineThickness; // Neue Option für Linienstärke
+
   ChartWidgetModel({
     required String id,
     required String title,
@@ -406,6 +426,10 @@ class ChartWidgetModel extends AnalysisWidgetModel {
     this.showLegend = true,
     this.displayRange = 10,
     this.showTimeControls = false,
+    this.triggerEnabled = false,
+    this.upperThreshold,
+    this.lowerThreshold,
+    this.lineThickness = 2.0,
     AnalysisWidgetSize size = AnalysisWidgetSize.wideRectangle,
     GridPosition? position,
   }) : super(id: id, title: title, type: 'chart', size: size, position: position);
@@ -416,7 +440,7 @@ class StatisticsWidgetModel extends AnalysisWidgetModel {
   final List<String> selectedStats; // z.B. ['min', 'max', 'avg', 'stdDev']
   final bool showXAxis;
   final bool showYAxis;
-  
+
   StatisticsWidgetModel({
     required String id,
     required String title,
@@ -432,7 +456,7 @@ class StatisticsWidgetModel extends AnalysisWidgetModel {
 class FrequencyWidgetModel extends AnalysisWidgetModel {
   final bool showBleFreq;
   final bool showLoopFreq;
-  
+
   FrequencyWidgetModel({
     required String id,
     required String title,
@@ -448,7 +472,7 @@ class DutyCycleWidgetModel extends AnalysisWidgetModel {
   final bool showDuty1;
   final bool showDuty2;
   final bool showAsGauge;
-  
+
   DutyCycleWidgetModel({
     required String id,
     required String title,
@@ -460,6 +484,27 @@ class DutyCycleWidgetModel extends AnalysisWidgetModel {
   }) : super(id: id, title: title, type: 'duty_cycle', size: size, position: position);
 }
 
+// Widget-Model für Mittelwert-Anzeige
+class AverageWidgetModel extends AnalysisWidgetModel {
+  final bool showXAverage;
+  final bool showYAverage;
+  final bool showMagnitude;
+  final int decimalPlaces;
+  final int windowSize;
+
+  AverageWidgetModel({
+    required String id,
+    required String title,
+    this.showXAverage = true,
+    this.showYAverage = true,
+    this.showMagnitude = true,
+    this.decimalPlaces = 2,
+    this.windowSize = 100,
+    AnalysisWidgetSize size = AnalysisWidgetSize.smallSquare,
+    GridPosition? position,
+  }) : super(id: id, title: title, type: 'average', size: size, position: position);
+}
+
 // NEU: Klasse für Analyse-Tabs mit Widget-Unterstützung
 class AnalysisTab {
   final String title;
@@ -468,7 +513,7 @@ class AnalysisTab {
   final DateTime createdAt;
   final List<AnalysisWidgetModel> widgets;
   bool isEditMode;
-  
+
   AnalysisTab({
     required this.title,
     required this.isLive,
@@ -478,13 +523,15 @@ class AnalysisTab {
     this.isEditMode = false,
   }) : createdAt = createdAt ?? DateTime.now(),
         widgets = widgets ?? _getDefaultWidgets();
-  
+
   // Standard-Widget-Konfiguration für neue Tabs
   static List<AnalysisWidgetModel> _getDefaultWidgets() {
     return [
       ChartWidgetModel(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         title: 'Sensor-Diagramm',
+        lineThickness: 2.0,
+        showTimeControls: true, // Aktiviere Zeitkontrollen standardmäßig für Live-Tabs
       ),
       StatisticsWidgetModel(
         id: '${DateTime.now().millisecondsSinceEpoch + 1}',
@@ -812,31 +859,31 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
       height: 200,
       child: Container(
         decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        border: Border.all(color: Colors.grey.shade400, width: 2),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Stack(children: [
-        CustomPaint(size: const Size(200, 200), painter: GridPainter()),
-        const Center(child: Icon(Icons.add, size: 40, color: Colors.red)),
-        Positioned(
-          left: 100 + (normalizedX * 80) - 10,
-          top: 100 - (normalizedY * 80) - 10,
-          child: Container(
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-                color: _getQualityColor(data.quality), shape: BoxShape.circle,
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4)]),
-          ),
+          color: Colors.grey.shade100,
+          border: Border.all(color: Colors.grey.shade400, width: 2),
+          borderRadius: BorderRadius.circular(12),
         ),
-        Positioned(bottom: 4, left: 4,
-            child: Text('X: ${x.toStringAsFixed(2)} mT',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
-        Positioned(bottom: 4, right: 4,
-            child: Text('Y: ${y.toStringAsFixed(2)} mT',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
-      ]),
+        child: Stack(children: [
+          CustomPaint(size: const Size(200, 200), painter: GridPainter()),
+          const Center(child: Icon(Icons.add, size: 40, color: Colors.red)),
+          Positioned(
+            left: 100 + (normalizedX * 80) - 10,
+            top: 100 - (normalizedY * 80) - 10,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                  color: _getQualityColor(data.quality), shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4)]),
+            ),
+          ),
+          Positioned(bottom: 4, left: 4,
+              child: Text('X: ${x.toStringAsFixed(2)} mT',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+          Positioned(bottom: 4, right: 4,
+              child: Text('Y: ${y.toStringAsFixed(2)} mT',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))),
+        ]),
       ),
     );
   }
@@ -890,13 +937,13 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
     String axis = '';
     bool isXAxis = false;
     bool isYAxis = false;
-    
+
     switch (step) {
       case 0: // Beide Achsen aus - nur Kalibrier-Toggle
         break;
-      case 1: // Beide Achsen aus - nur Kalibrier-Toggle  
+      case 1: // Beide Achsen aus - nur Kalibrier-Toggle
         break;
-      case 2: 
+      case 2:
       case 3:
         axis = 'X';
         isXAxis = true;
@@ -908,11 +955,11 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
         break;
       default: return const SizedBox.shrink();
     }
-    
+
     // Aktuelle PWM-Werte aus den Daten holen
     int currentPwmX = _currentUpdate.currentCalibrationData?.pwmX ?? 0;
     int currentPwmY = _currentUpdate.currentCalibrationData?.pwmY ?? 0;
-    
+
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -930,7 +977,7 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            
+
             // X-Achse Steuerung
             if (isXAxis) ...[
               Text('X-Achse PWM: $currentPwmX', style: const TextStyle(fontSize: 14)),
@@ -972,7 +1019,7 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
                 child: const Text('X PWM = 0'),
               ),
             ],
-            
+
             // Y-Achse Steuerung
             if (isYAxis) ...[
               Text('Y-Achse PWM: $currentPwmY', style: const TextStyle(fontSize: 14)),
@@ -1018,14 +1065,14 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
             const Divider(),
             const SizedBox(height: 8),
           ],
-          
+
           // Kalibrier-Toggle immer anzeigen
           SwitchListTile(
             title: const Text('Kalibrierkorrektur verwenden'),
             subtitle: Text(
-              step == 0 || step == 1 || step == 5 
-                ? 'Bei PWM=0 hat dies keinen Effekt'
-                : 'Beeinflusst die angezeigten Werte',
+              step == 0 || step == 1 || step == 5
+                  ? 'Bei PWM=0 hat dies keinen Effekt'
+                  : 'Beeinflusst die angezeigten Werte',
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
             value: _calibEnabled,
@@ -1035,11 +1082,11 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
             },
             contentPadding: EdgeInsets.zero,
           ),
-          
+
           // --- AB HIER DEN NEUEN CODE EINFÜGEN ---
-          
+
           const SizedBox(height: 8), // Ein kleiner Abstand
-          
+
           SwitchListTile(
             title: const Text('Basis-Offset-Korrektur anwenden'),
             subtitle: const Text(
@@ -1049,18 +1096,18 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
             value: _baseOffsetEnabled, // Verwendet die neue Zustandsvariable
             onChanged: (value) {
               // Aktualisiert den lokalen Zustand und sendet den Befehl
-              setState(() => _baseOffsetEnabled = value); 
+              setState(() => _baseOffsetEnabled = value);
               widget.onSendCommand('BASE_OFFSET=${value ? "ON" : "OFF"}');
             },
             contentPadding: EdgeInsets.zero,
           ),
-          
+
           // --- ENDE DES NEUEN CODES ---
         ],
       ),
     );
   }
-  
+
   Widget _buildPWMButton({
     required String label,
     required IconData icon,
@@ -1076,7 +1123,7 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
       ),
     );
   }
-  
+
   void _sendIncrementalPWM(String axis, int newValue) {
     // Begrenzen auf 0-1014 (DUTY_MAX)
     newValue = newValue.clamp(0, 1014);
@@ -1145,6 +1192,392 @@ enum CalibUiState {
   error
 }
 
+// Optimiertes Chart Widget für bessere Performance
+class OptimizedChartWidget extends StatefulWidget {
+  final ChartWidgetModel model;
+  final List<SensorReading> data;
+  final bool isSmall;
+  final bool isRecording;
+  final Function(bool) onRecordingChanged;
+  final Function(ChartWidgetModel) onModelUpdate;
+
+  const OptimizedChartWidget({
+    Key? key,
+    required this.model,
+    required this.data,
+    required this.isSmall,
+    required this.isRecording,
+    required this.onRecordingChanged,
+    required this.onModelUpdate,
+  }) : super(key: key);
+
+  @override
+  State<OptimizedChartWidget> createState() => _OptimizedChartWidgetState();
+}
+
+class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
+  Timer? _chartUpdateTimer;
+  List<SensorReading> _displayData = [];
+  DateTime _lastUpdate = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _updateDisplayData();
+
+    // Eigener Update-Timer nur für dieses Chart - Maximale Frequenz für ultra-kurze Zeitfenster
+    final updateInterval = widget.model.displayRange <= 1
+        ? 4   // 250 FPS für 1 Sekunde - absolute maximale Auflösung
+        : widget.model.displayRange <= 2
+        ? 6   // 166 FPS für 2 Sekunden
+        : widget.model.displayRange <= 5
+        ? 8   // 125 FPS für 5 Sekunden
+        : widget.model.displayRange <= 10
+        ? 16  // 60 FPS für kurze Zeitfenster
+        : widget.model.displayRange <= 30
+        ? 33  // 30 FPS für mittlere Zeitfenster
+        : 50; // 20 FPS für lange Zeitfenster
+
+    _chartUpdateTimer = Timer.periodic(Duration(milliseconds: updateInterval), (timer) {
+      if (mounted) {
+        _updateDisplayData();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(OptimizedChartWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Update wenn sich die Daten oder der Anzeigebereich ändert
+    if (oldWidget.data != widget.data || oldWidget.model.displayRange != widget.model.displayRange) {
+      _updateDisplayData();
+
+      // Neustart des Timers mit angepasster Frequenz bei Änderung des Zeitfensters
+      if (oldWidget.model.displayRange != widget.model.displayRange) {
+        _chartUpdateTimer?.cancel();
+
+        final updateInterval = widget.model.displayRange <= 1
+            ? 4   // 250 FPS für 1 Sekunde
+            : widget.model.displayRange <= 2
+            ? 6   // 166 FPS für 2 Sekunden
+            : widget.model.displayRange <= 5
+            ? 8   // 125 FPS für 5 Sekunden
+            : widget.model.displayRange <= 10
+            ? 16  // 60 FPS für kurze Zeitfenster
+            : widget.model.displayRange <= 30
+            ? 33  // 30 FPS für mittlere Zeitfenster
+            : 50; // 20 FPS für lange Zeitfenster
+
+        _chartUpdateTimer = Timer.periodic(Duration(milliseconds: updateInterval), (timer) {
+          if (mounted) {
+            _updateDisplayData();
+          }
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _chartUpdateTimer?.cancel();
+    super.dispose();
+  }
+
+  void _updateDisplayData() {
+    if (!mounted) return;
+
+    // Immer updaten für Echtzeit-Darstellung
+    setState(() {
+      final now = DateTime.now();
+      final startTime = now.subtract(Duration(seconds: widget.model.displayRange));
+
+      // Filtere Daten basierend auf Zeitfenster
+      _displayData = widget.data.where((reading) =>
+          reading.timestamp.isAfter(startTime)
+      ).toList();
+
+      _lastUpdate = now;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _buildChartContent();
+  }
+
+  Widget _buildChartContent() {
+    if (_displayData.isEmpty) {
+      return Center(
+        child: Text(
+          'Keine Daten',
+          style: TextStyle(
+            color: CupertinoColors.systemGrey,
+            fontSize: widget.isSmall ? 10 : 12,
+          ),
+        ),
+      );
+    }
+
+    // Berechne den tatsächlichen X-Bereich für volle Nutzung
+    final now = DateTime.now();
+    final startTime = now.subtract(Duration(seconds: widget.model.displayRange));
+
+    double actualMinX = 0;
+    double actualMaxX = widget.model.displayRange.toDouble();
+
+    final spots = _displayData.map((reading) {
+      final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+      return FlSpot(timeDiff, reading.y);
+    }).toList();
+
+    if (spots.isNotEmpty) {
+      actualMinX = spots.first.x;
+      actualMaxX = math.max(spots.last.x, actualMinX + 1);
+    }
+
+    // Berechne Min/Max für beide Achsen
+    final xSensorValues = _displayData.map((r) => r.x).toList();
+    final ySensorValues = _displayData.map((r) => r.y).toList();
+
+    final allValues = [...xSensorValues, ...ySensorValues];
+    final minValue = allValues.isNotEmpty ? allValues.reduce(math.min) : 0;
+    final maxValue = allValues.isNotEmpty ? allValues.reduce(math.max) : 100;
+    final padding = (maxValue - minValue) * 0.1;
+
+    return Column(
+      children: [
+        // Kontrollen für Zeitskala und Play/Pause
+        if (widget.model.showTimeControls) Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Zeitskala-Auswahl mit Popup
+              PopupMenuButton<int>(
+                initialValue: widget.model.displayRange,
+                onSelected: (value) {
+                  widget.onModelUpdate(ChartWidgetModel(
+                    id: widget.model.id,
+                    title: widget.model.title,
+                    showGrid: widget.model.showGrid,
+                    showLegend: widget.model.showLegend,
+                    displayRange: value,
+                    showTimeControls: widget.model.showTimeControls,
+                    lineThickness: widget.model.lineThickness,
+                    triggerEnabled: widget.model.triggerEnabled,
+                    upperThreshold: widget.model.upperThreshold,
+                    lowerThreshold: widget.model.lowerThreshold,
+                    size: widget.model.size,
+                    position: widget.model.position,
+                  ));
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(value: 1, child: Text('1 Sekunde')),
+                  PopupMenuItem(value: 2, child: Text('2 Sekunden')),
+                  PopupMenuItem(value: 5, child: Text('5 Sekunden')),
+                  PopupMenuItem(value: 10, child: Text('10 Sekunden')),
+                  PopupMenuItem(value: 30, child: Text('30 Sekunden')),
+                  PopupMenuItem(value: 60, child: Text('1 Minute')),
+                  PopupMenuItem(value: 120, child: Text('2 Minuten')),
+                  PopupMenuItem(value: 300, child: Text('5 Minuten')),
+                ],
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: CupertinoColors.systemGrey4),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.access_time, size: 16, color: CupertinoColors.systemGrey),
+                      const SizedBox(width: 6),
+                      Text(
+                        widget.model.displayRange == 1
+                            ? '1 Sekunde'
+                            : widget.model.displayRange < 60
+                            ? '${widget.model.displayRange} Sekunden'
+                            : '${widget.model.displayRange ~/ 60} Min',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.arrow_drop_down, size: 18, color: CupertinoColors.systemGrey),
+                    ],
+                  ),
+                ),
+              ),
+              // Play/Pause Button
+              IconButton(
+                icon: Icon(
+                  widget.isRecording ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                  color: widget.isRecording ? CupertinoColors.systemOrange : CupertinoColors.systemGreen,
+                  size: 32,
+                ),
+                onPressed: () => widget.onRecordingChanged(!widget.isRecording),
+                padding: EdgeInsets.zero,
+                constraints: BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+        if (widget.model.showTimeControls) const Divider(height: 1),
+
+        // Legende (wenn aktiviert)
+        if (widget.model.showLegend && !widget.isSmall) Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 20,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemRed,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('X-Achse', style: TextStyle(fontSize: 12)),
+              const SizedBox(width: 24),
+              Container(
+                width: 20,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: CupertinoColors.activeBlue,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Y-Achse', style: TextStyle(fontSize: 12)),
+            ],
+          ),
+        ),
+
+        // Chart mit RepaintBoundary für isoliertes Rendering
+        Expanded(
+          child: RepaintBoundary(
+            child: Padding(
+              padding: EdgeInsets.all(widget.isSmall ? 8 : 16),
+              child: LineChart(
+                LineChartData(
+                  clipData: FlClipData.all(),
+                  minX: actualMinX,
+                  maxX: actualMaxX,
+                  minY: minValue - padding,
+                  maxY: maxValue + padding,
+                  gridData: FlGridData(
+                    show: widget.model.showGrid,
+                    drawVerticalLine: true,
+                    drawHorizontalLine: true,
+                    horizontalInterval: (maxValue - minValue) / 5,
+                    verticalInterval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 5 : (actualMaxX - actualMinX) / 4,
+                    getDrawingHorizontalLine: (value) {
+                      return FlLine(
+                        color: CupertinoColors.systemGrey4.withOpacity(0.3),
+                        strokeWidth: 1,
+                      );
+                    },
+                    getDrawingVerticalLine: (value) {
+                      return FlLine(
+                        color: CupertinoColors.systemGrey4.withOpacity(0.3),
+                        strokeWidth: 1,
+                      );
+                    },
+                  ),
+                  titlesData: FlTitlesData(
+                    show: !widget.isSmall,
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: !widget.isSmall,
+                        reservedSize: 40,
+                        interval: (maxValue - minValue) / 4,
+                        getTitlesWidget: (value, meta) => Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Text(
+                            value.toStringAsFixed(1),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: CupertinoColors.systemGrey,
+                            ),
+                            textAlign: TextAlign.right,
+                          ),
+                        ),
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: !widget.isSmall,
+                        reservedSize: 30,
+                        interval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 4 : (actualMaxX - actualMinX) / 5,
+                        getTitlesWidget: (value, meta) {
+                          // Zeige Zeitangaben relativ zur aktuellen Zeit
+                          final seconds = widget.model.displayRange - value;
+                          String label;
+                          if (seconds < 60) {
+                            label = '-${seconds.toInt()}s';
+                          } else {
+                            label = '-${(seconds / 60).toStringAsFixed(1)}m';
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: CupertinoColors.systemGrey,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(
+                      color: CupertinoColors.systemGrey4.withOpacity(0.5),
+                      width: 1,
+                    ),
+                  ),
+                  lineBarsData: [
+                    // X-Achse Daten (rot)
+                    LineChartBarData(
+                      spots: _displayData.map((reading) {
+                        final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+                        return FlSpot(timeDiff, reading.x.toDouble());
+                      }).toList(),
+                      isCurved: false,
+                      color: CupertinoColors.systemRed,
+                      barWidth: widget.model.lineThickness,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(show: false),
+                      belowBarData: BarAreaData(show: false),
+                    ),
+                    // Y-Achse Daten (blau)
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: false,
+                      color: CupertinoColors.activeBlue,
+                      barWidth: widget.model.lineThickness,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(show: false),
+                      belowBarData: BarAreaData(show: false),
+                    ),
+                  ],
+                ),
+                duration: Duration.zero, // Keine Animation für flüssigere Updates
+                curve: Curves.linear,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // NEU: Dynamische Analyse-Workspace-Seite
 class AnalysisWorkspacePage extends StatefulWidget {
   final List<SensorReading> sensorHistory;
@@ -1155,7 +1588,7 @@ class AnalysisWorkspacePage extends StatefulWidget {
   final Function() onExportToCSV;
   final VoidCallback onClearHistory;
   final Function(bool)? onWidgetTouchChanged;
-  
+
   const AnalysisWorkspacePage({
     Key? key,
     required this.sensorHistory,
@@ -1172,17 +1605,20 @@ class AnalysisWorkspacePage extends StatefulWidget {
   State<AnalysisWorkspacePage> createState() => _AnalysisWorkspacePageState();
 }
 
-class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
+class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with AutomaticKeepAliveClientMixin {
   // State für dynamische Tabs
   List<AnalysisTab> openTabs = [];
   int activeTabIndex = 0;
-  
+
   // Frequenz und Duty Cycle Werte (werden über HomePage aktualisiert)
   double bleFrequency = 0.0;
   double loopFrequency = 0.0;
   int lastDuty1 = 0;
   int lastDuty2 = 0;
-  
+
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   void initState() {
     super.initState();
@@ -1194,7 +1630,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         data: widget.sensorHistory,
       ),
     ];
-    
+
     // ScrollController Listener um Scrollen zu verhindern wenn Widget berührt wird
     _scrollController.addListener(() {
       // BEGRÜNDUNG: Die Sperre wird nur noch aktiv, wenn kein Widget gezogen wird (_currentDragWidget == null).
@@ -1204,11 +1640,12 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         }
       }
     });
-    
-    
+
+
     // Initialisiere Orientierung und Grid-Zeilen
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      
+      if (!mounted) return; // Prüfe ob Widget noch existiert
+
       // Setze initiale Grid-Zeilen basierend auf vorhandenen Widgets
       int maxRow = 0;
       for (var tab in openTabs) {
@@ -1221,27 +1658,29 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           }
         }
       }
-      
-      setState(() {
-        _currentGridRows = math.max(maxRow + 2, 10); // Mindestens 10 Zeilen
-      });
+
+      if (mounted) { // Nochmal prüfen vor setState
+        setState(() {
+          _currentGridRows = math.max(maxRow + 2, 10); // Mindestens 10 Zeilen
+        });
+      }
     });
   }
-  
+
   @override
   void dispose() {
     _scrollController.dispose();
     _autoScrollTimer?.cancel();
     super.dispose();
   }
-  
+
   void _createSnapshot() {
     final now = DateTime.now();
     final title = 'Snapshot ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
-    
+
     // Erstelle eine echte Kopie der Daten
     final snapshotData = List<SensorReading>.from(widget.sensorHistory);
-    
+
     setState(() {
       openTabs.add(AnalysisTab(
         title: title,
@@ -1251,7 +1690,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       activeTabIndex = openTabs.length - 1;
     });
   }
-  
+
   void _showNewTabMenu() {
     showModalBottomSheet(
       context: context,
@@ -1340,7 +1779,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       },
     );
   }
-  
+
   void _closeTab(int index) {
     if (openTabs.length > 1 && !openTabs[index].isLive) {
       setState(() {
@@ -1353,13 +1792,13 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       });
     }
   }
-  
+
   void _showSnapshotStatistics() {
     final activeTab = openTabs[activeTabIndex];
     if (!activeTab.isLive && activeTab.data.isNotEmpty) {
       // Berechne Statistiken für Snapshot
       final stats = _calculateStatistics(activeTab.data);
-      
+
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
@@ -1393,7 +1832,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       );
     }
   }
-  
+
   Widget _buildStatRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1406,7 +1845,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   Map<String, dynamic> _calculateStatistics(List<SensorReading> data) {
     if (data.isEmpty) {
       return {
@@ -1415,35 +1854,40 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         'yMin': 0.0, 'yMax': 0.0, 'yAvg': 0.0, 'yStdDev': 0.0,
       };
     }
-    
+
     // X-Achse Statistiken
     final xValues = data.map((r) => r.x).toList();
     final xMin = xValues.reduce(math.min);
     final xMax = xValues.reduce(math.max);
     final xAvg = xValues.reduce((a, b) => a + b) / xValues.length;
     final xStdDev = math.sqrt(
-      xValues.map((x) => math.pow(x - xAvg, 2)).reduce((a, b) => a + b) / xValues.length
+        xValues.map((x) => math.pow(x - xAvg, 2)).reduce((a, b) => a + b) / xValues.length
     );
-    
+
     // Y-Achse Statistiken
     final yValues = data.map((r) => r.y).toList();
     final yMin = yValues.reduce(math.min);
     final yMax = yValues.reduce(math.max);
     final yAvg = yValues.reduce((a, b) => a + b) / yValues.length;
     final yStdDev = math.sqrt(
-      yValues.map((y) => math.pow(y - yAvg, 2)).reduce((a, b) => a + b) / yValues.length
+        yValues.map((y) => math.pow(y - yAvg, 2)).reduce((a, b) => a + b) / yValues.length
     );
-    
+
+    // Durchschnittliche Magnitude berechnen
+    final magnitudes = data.map((r) => math.sqrt(r.x * r.x + r.y * r.y)).toList();
+    final avgMagnitude = magnitudes.reduce((a, b) => a + b) / magnitudes.length;
+
     return {
       'count': data.length,
       'xMin': xMin, 'xMax': xMax, 'xAvg': xAvg, 'xStdDev': xStdDev,
       'yMin': yMin, 'yMax': yMax, 'yAvg': yAvg, 'yStdDev': yStdDev,
+      'avgMagnitude': avgMagnitude,
     };
   }
-  
+
   void _showContextMenu() {
     final activeTab = openTabs[activeTabIndex];
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1501,7 +1945,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                         },
                       ),
                       const Divider(height: 0.5, indent: 60),
-                      
+
                       // Tab umbenennen (für alle Tabs)
                       ListTile(
                         leading: Container(
@@ -1522,7 +1966,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                           _renameTab(activeTabIndex);
                         },
                       ),
-                      
+
                       if (activeTab.isLive) ...[
                         const Divider(height: 0.5, indent: 60),
                         ListTile(
@@ -1541,48 +1985,6 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                           ),
                           subtitle: const Text(
                             'Nur für Snapshots verfügbar',
-                            style: TextStyle(fontSize: 13, color: Colors.grey),
-                          ),
-                          enabled: false,
-                        ),
-                        const Divider(height: 0.5, indent: 60),
-                        ListTile(
-                          leading: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(Icons.trending_flat, color: Colors.grey),
-                          ),
-                          title: const Text(
-                            'Gleitender Mittelwert',
-                            style: TextStyle(fontSize: 17, color: Colors.grey),
-                          ),
-                          subtitle: const Text(
-                            'Kommt bald',
-                            style: TextStyle(fontSize: 13, color: Colors.grey),
-                          ),
-                          enabled: false,
-                        ),
-                        const Divider(height: 0.5, indent: 60),
-                        ListTile(
-                          leading: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(Icons.vertical_align_center, color: Colors.grey),
-                          ),
-                          title: const Text(
-                            'Trigger-Schranke',
-                            style: TextStyle(fontSize: 17, color: Colors.grey),
-                          ),
-                          subtitle: const Text(
-                            'Kommt bald',
                             style: TextStyle(fontSize: 13, color: Colors.grey),
                           ),
                           enabled: false,
@@ -1620,7 +2022,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       },
     );
   }
-  
+
   void _exportSnapshotToCSV(AnalysisTab tab) async {
     // Verwende die bestehende Export-Funktionalität
     // Erstelle temporäre CSV-Daten
@@ -1628,17 +2030,17 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     for (var reading in tab.data) {
       csv += '${reading.timestamp.toIso8601String()},${reading.x},${reading.y},${reading.duty1},${reading.duty2}\n';
     }
-    
+
     final directory = await getApplicationDocumentsDirectory();
     final file = File('${directory.path}/maglev_${tab.title.replaceAll(':', '-')}.csv');
     await file.writeAsString(csv);
-    
+
     Share.shareXFiles([XFile(file.path)], text: 'MagLev Sensor Data - ${tab.title}');
   }
-  
+
   void _renameTab(int index) {
     final controller = TextEditingController(text: openTabs[index].title);
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1674,12 +2076,13 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final activeTab = openTabs[activeTabIndex];
-    
-    
+
+
     return Scaffold(
       backgroundColor: const Color(0xFFF2F2F7), // iOS System Background
       body: Column(
@@ -1701,141 +2104,141 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                    Expanded(
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: openTabs.length,
-                        itemBuilder: (context, index) {
-                          final tab = openTabs[index];
-                          final isActive = index == activeTabIndex;
-                          
-                          return GestureDetector(
-                            onTap: () => setState(() => activeTabIndex = index),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              curve: Curves.easeInOut,
-                              constraints: const BoxConstraints(maxWidth: 180),
-                              margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
-                              padding: EdgeInsets.symmetric(
-                                horizontal: tab.isLive ? 16 : 12,
-                                vertical: 0,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isActive 
+                  Expanded(
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: openTabs.length,
+                      itemBuilder: (context, index) {
+                        final tab = openTabs[index];
+                        final isActive = index == activeTabIndex;
+
+                        return GestureDetector(
+                          onTap: () => setState(() => activeTabIndex = index),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeInOut,
+                            constraints: const BoxConstraints(maxWidth: 180),
+                            margin: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: tab.isLive ? 16 : 12,
+                              vertical: 0,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isActive
                                   ? Colors.blue.withOpacity(0.15)
                                   : Colors.transparent,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    tab.isLive 
-                                      ? Icons.sensors 
-                                      : Icons.camera_alt_outlined,
-                                    size: 18,
-                                    color: isActive 
-                                      ? Colors.blue 
-                                      : Colors.grey.shade600,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Flexible(
-                                    child: Text(
-                                      tab.title,
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        color: isActive 
-                                          ? Colors.blue 
-                                          : Colors.grey.shade600,
-                                        fontWeight: isActive 
-                                          ? FontWeight.w600 
-                                          : FontWeight.w400,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  if (!tab.isLive) ...[
-                                    const SizedBox(width: 6),
-                                    GestureDetector(
-                                      onTap: () => _closeTab(index),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey.shade400,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.close,
-                                          size: 12,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                          );
-                        },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  tab.isLive
+                                      ? Icons.sensors
+                                      : Icons.camera_alt_outlined,
+                                  size: 18,
+                                  color: isActive
+                                      ? Colors.blue
+                                      : Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    tab.title,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      color: isActive
+                                          ? Colors.blue
+                                          : Colors.grey.shade600,
+                                      fontWeight: isActive
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (!tab.isLive) ...[
+                                  const SizedBox(width: 6),
+                                  GestureDetector(
+                                    onTap: () => _closeTab(index),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade400,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.close,
+                                        size: 12,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 32,
+                    onPressed: _showNewTabMenu,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.activeBlue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        CupertinoIcons.plus,
+                        size: 18,
+                        color: CupertinoColors.activeBlue,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      minSize: 32,
-                      onPressed: _showNewTabMenu,
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: CupertinoColors.activeBlue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          CupertinoIcons.plus,
-                          size: 18,
-                          color: CupertinoColors.activeBlue,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-          
+          ),
+
           // Haupt-Content Bereich mit konfigurierbaren Widgets
           Expanded(
             child: Stack(
               children: [
                 // Widget-Liste
                 activeTab.widgets.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.widgets_outlined, size: 64, color: Colors.grey.shade400),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Keine Widgets konfiguriert',
-                            style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-                          ),
-                          const SizedBox(height: 8),
-                          TextButton.icon(
-                            icon: const Icon(Icons.add),
-                            label: const Text('Widget hinzufügen'),
-                            onPressed: () => _showAddWidgetDialog(activeTabIndex),
-                          ),
-                        ],
+                    ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.widgets_outlined, size: 64, color: Colors.grey.shade400),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Keine Widgets konfiguriert',
+                        style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
                       ),
-                    )
-                  : _buildWidgetGrid(
-                      widgets: activeTab.widgets,
-                      tabIndex: activeTabIndex,
-                      data: activeTab.isLive ? this.widget.sensorHistory : activeTab.data,
-                      isEditMode: activeTab.isEditMode,
-                    ),
-                
-                
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        icon: const Icon(Icons.add),
+                        label: const Text('Widget hinzufügen'),
+                        onPressed: () => _showAddWidgetDialog(activeTabIndex),
+                      ),
+                    ],
+                  ),
+                )
+                    : _buildWidgetGrid(
+                  widgets: activeTab.widgets,
+                  tabIndex: activeTabIndex,
+                  data: activeTab.isLive ? this.widget.sensorHistory : activeTab.data,
+                  isEditMode: activeTab.isEditMode,
+                ),
+
+
                 // Edit Mode Buttons
                 if (activeTab.isEditMode)
                   Positioned(
@@ -1929,7 +2332,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               ],
             ),
           ),
-          
+
           // iOS-Style Werkzeugleiste
           Container(
             decoration: BoxDecoration(
@@ -1954,7 +2357,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   Widget _buildLiveStreamToolbar() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
@@ -1969,7 +2372,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           ),
         ),
         const Spacer(),
-        
+
         // Drei-Punkte-Menü
         IconButton(
           icon: const Icon(Icons.more_vert),
@@ -1978,7 +2381,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ],
     );
   }
-  
+
   Widget _buildSnapshotToolbar() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -2010,7 +2413,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ],
     );
   }
-  
+
   Widget _buildWidgetGrid({
     required List<AnalysisWidgetModel> widgets,
     required int tabIndex,
@@ -2021,15 +2424,15 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     final orientation = MediaQuery.of(context).orientation;
     final isPortrait = orientation == Orientation.portrait;
     final gridColumns = WidgetGridManager.getResponsiveGridColumns(context);
-    
-    
+
+
     // Stelle sicher, dass alle Widgets Positionen haben
     for (var widget in widgets) {
       if (widget.position == null) {
         widget.position = WidgetGridManager.findFreePosition(widgets, widget);
       }
     }
-    
+
     // Berechne die tatsächlich benötigte Grid-Höhe basierend auf dem untersten Widget
     int maxRow = 0;
     int maxCol = 0;
@@ -2039,7 +2442,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         if (bottomRow > maxRow) {
           maxRow = bottomRow;
         }
-        
+
         // Berechne auch die rechteste Spalte für Landscape-Modus
         final rightCol = widget.position!.x + widget.gridWidth - 1;
         if (rightCol > maxCol) {
@@ -2047,70 +2450,70 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         }
       }
     }
-    
+
     // Im Bearbeitungsmodus: Zeige das ganze Grid
     // Im normalen Modus: Nur bis zum untersten Widget + etwas Puffer
-    final effectiveRows = isEditMode 
+    final effectiveRows = isEditMode
         ? _currentGridRows  // Im Edit-Modus das volle Grid zeigen
         : math.min(maxRow + 3, _currentGridRows);  // Im Normal-Modus nur bis zum letzten Widget + Puffer
-    
+
     final gridHeight = WidgetGridManager.calculateGridHeight(effectiveRows);
     final minHeight = MediaQuery.of(context).size.height - 200; // Fast volle Höhe minus Header/Toolbar
-    
+
     // Berechne Grid-Breite basierend auf Orientierung
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     // Im Landscape-Modus: Passe die Grid-Breite an die Widgets an
     final effectiveCols = isEditMode || isPortrait
         ? gridColumns  // Im Portrait oder Edit-Modus normale Spaltenanzahl
         : math.min(maxCol + 3, gridColumns);  // Im Landscape normal-Modus nur bis zum rechtesten Widget + Puffer
-    
+
     final gridWidth = screenWidth - 16; // Reduziertes Padding (8px auf jeder Seite)
-    
+
     // Berechne die tatsächliche Zellengröße basierend auf verfügbarem Platz
     // Bessere Formel: (verfügbare Breite - Gesamtspacing) / Anzahl Spalten
     final totalSpacing = WidgetGridManager.cellSpacing * (gridColumns + 1);
     final cellWidth = (gridWidth - totalSpacing) / gridColumns;
     final cellHeight = cellWidth * 0.75; // Rechteckige Zellen (4:3 Verhältnis)
-    
+
     return GestureDetector(
       // Blockiere horizontale Swipes wenn Widget berührt wird
-      onHorizontalDragStart: isEditMode && (_isWidgetBeingTouched || _currentDragWidget != null) 
+      onHorizontalDragStart: isEditMode && (_isWidgetBeingTouched || _currentDragWidget != null)
           ? (_) {} // Leerer Handler blockiert die Geste
           : null,
       child: Container(
         padding: const EdgeInsets.only(left: 8, top: 8, right: 8, bottom: 8),
         child: Listener(
           onPointerDown: (event) {
-          if (isEditMode) {
-            // Prüfe ob der Touch auf einem Widget ist
-            final localPosition = event.localPosition - const Offset(8, 8); // Padding abziehen
-            
-            for (var widget in widgets) {
-              if (widget.position != null) {
-                final widgetLeft = widget.position!.x * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
-                final widgetTop = widget.position!.y * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
-                final widgetRight = widgetLeft + widget.gridWidth * cellWidth + (widget.gridWidth - 1) * WidgetGridManager.cellSpacing;
-                final widgetBottom = widgetTop + widget.gridHeight * cellHeight + (widget.gridHeight - 1) * WidgetGridManager.cellSpacing;
-                
-                // Berücksichtige Scroll-Offset
-                final verticalScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
-                
-                // Nur vertikales Scrolling berücksichtigen
-                final adjustedX = localPosition.dx;
-                final adjustedY = localPosition.dy + verticalScrollOffset;
-                
-                if (adjustedX >= widgetLeft && 
-                    adjustedX <= widgetRight && 
-                    adjustedY >= widgetTop && 
-                    adjustedY <= widgetBottom) {
-                  _setWidgetBeingTouched(true);
-                  return;
+            if (isEditMode) {
+              // Prüfe ob der Touch auf einem Widget ist
+              final localPosition = event.localPosition - const Offset(8, 8); // Padding abziehen
+
+              for (var widget in widgets) {
+                if (widget.position != null) {
+                  final widgetLeft = widget.position!.x * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
+                  final widgetTop = widget.position!.y * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
+                  final widgetRight = widgetLeft + widget.gridWidth * cellWidth + (widget.gridWidth - 1) * WidgetGridManager.cellSpacing;
+                  final widgetBottom = widgetTop + widget.gridHeight * cellHeight + (widget.gridHeight - 1) * WidgetGridManager.cellSpacing;
+
+                  // Berücksichtige Scroll-Offset
+                  final verticalScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
+
+                  // Nur vertikales Scrolling berücksichtigen
+                  final adjustedX = localPosition.dx;
+                  final adjustedY = localPosition.dy + verticalScrollOffset;
+
+                  if (adjustedX >= widgetLeft &&
+                      adjustedX <= widgetRight &&
+                      adjustedY >= widgetTop &&
+                      adjustedY <= widgetBottom) {
+                    _setWidgetBeingTouched(true);
+                    return;
+                  }
                 }
               }
+              _setWidgetBeingTouched(false);
             }
-            _setWidgetBeingTouched(false);
-          }
           },
           onPointerUp: (_) {
             _setWidgetBeingTouched(false);
@@ -2123,96 +2526,96 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             scrollDirection: Axis.vertical,
             // BEGRÜNDUNG: Erlaubt programmatisches Scrollen, auch wenn ein Widget gezogen wird.
             physics: isEditMode && _isWidgetBeingTouched
-                ? const NeverScrollableScrollPhysics() 
+                ? const NeverScrollableScrollPhysics()
                 : const AlwaysScrollableScrollPhysics(),
             child: Container(
               width: double.infinity,
               height: gridHeight < minHeight ? minHeight : gridHeight,
               child: Stack(
                 children: [
-                    // Grid-Hintergrund - nur im Edit-Modus sichtbar
-                    if (isEditMode) _buildGridBackground(),
-                    
-                    // Vorschau-Rechteck beim Verschieben
-                    if (_currentDragWidget != null && _dragPreviewPosition != null)
-                      AnimatedPositioned(
-                        duration: const Duration(milliseconds: 100),
-                        left: _dragPreviewPosition!.x * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing,
-                        top: _dragPreviewPosition!.y * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing,
-                        width: _currentDragWidget!.gridWidth * cellWidth + 
-                               (_currentDragWidget!.gridWidth - 1) * WidgetGridManager.cellSpacing,
-                        height: _currentDragWidget!.gridHeight * cellHeight + 
-                                (_currentDragWidget!.gridHeight - 1) * WidgetGridManager.cellSpacing,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: CupertinoColors.systemGreen.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: CupertinoColors.systemGreen,
-                              width: 2,
-                            ),
+                  // Grid-Hintergrund - nur im Edit-Modus sichtbar
+                  if (isEditMode) _buildGridBackground(),
+
+                  // Vorschau-Rechteck beim Verschieben
+                  if (_currentDragWidget != null && _dragPreviewPosition != null)
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 100),
+                      left: _dragPreviewPosition!.x * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing,
+                      top: _dragPreviewPosition!.y * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing,
+                      width: _currentDragWidget!.gridWidth * cellWidth +
+                          (_currentDragWidget!.gridWidth - 1) * WidgetGridManager.cellSpacing,
+                      height: _currentDragWidget!.gridHeight * cellHeight +
+                          (_currentDragWidget!.gridHeight - 1) * WidgetGridManager.cellSpacing,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.systemGreen.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: CupertinoColors.systemGreen,
+                            width: 2,
                           ),
                         ),
                       ),
-                    
-                    // Widgets
-                    ...widgets.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final widget = entry.value;
-                      
-                      if (widget.position == null) return Container();
-                      
-                      final posX = widget.isBeingDragged && widget.dragOffset != null
-                          ? widget.dragOffset!.dx * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing
-                          : widget.position!.x * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
-                          
-                      final posY = widget.isBeingDragged && widget.dragOffset != null
-                          ? widget.dragOffset!.dy * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing
-                          : widget.position!.y * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
-                      
-                      return Positioned(
-                        left: posX,
-                        top: posY,
-                        width: widget.gridWidth * cellWidth + 
-                               (widget.gridWidth - 1) * WidgetGridManager.cellSpacing,
-                        height: widget.gridHeight * cellHeight + 
-                                (widget.gridHeight - 1) * WidgetGridManager.cellSpacing,
-                        child: AnimatedContainer(
-                          duration: widget.isBeingDragged 
-                              ? Duration.zero 
-                              : const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                          child: _buildGridWidget(
-                            model: widget,
-                            tabIndex: tabIndex,
-                            widgetIndex: index,
-                            data: data,
-                            isEditMode: isEditMode,
-                          ),
+                    ),
+
+                  // Widgets
+                  ...widgets.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final widget = entry.value;
+
+                    if (widget.position == null) return Container();
+
+                    final posX = widget.isBeingDragged && widget.dragOffset != null
+                        ? widget.dragOffset!.dx * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing
+                        : widget.position!.x * (cellWidth + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
+
+                    final posY = widget.isBeingDragged && widget.dragOffset != null
+                        ? widget.dragOffset!.dy * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing
+                        : widget.position!.y * (cellHeight + WidgetGridManager.cellSpacing) + WidgetGridManager.cellSpacing;
+
+                    return Positioned(
+                      left: posX,
+                      top: posY,
+                      width: widget.gridWidth * cellWidth +
+                          (widget.gridWidth - 1) * WidgetGridManager.cellSpacing,
+                      height: widget.gridHeight * cellHeight +
+                          (widget.gridHeight - 1) * WidgetGridManager.cellSpacing,
+                      child: AnimatedContainer(
+                        duration: widget.isBeingDragged
+                            ? Duration.zero
+                            : const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        child: _buildGridWidget(
+                          model: widget,
+                          tabIndex: tabIndex,
+                          widgetIndex: index,
+                          data: data,
+                          isEditMode: isEditMode,
                         ),
-                      );
-                    }).toList(),
-                  ],
+                      ),
+                    );
+                  }).toList(),
+                ],
               ),
             ),
           ),
         ),
       ),
     );
-}
-  
+  }
+
   Widget _buildGridBackground() {
     final orientation = MediaQuery.of(context).orientation;
     final isPortrait = orientation == Orientation.portrait;
     final gridColumns = WidgetGridManager.getResponsiveGridColumns(context);
     final screenWidth = MediaQuery.of(context).size.width;
     final gridWidth = screenWidth - 16; // Gleiche Berechnung wie in _buildWidgetGrid
-    
+
     // Gleiche Formel wie in _buildWidgetGrid verwenden
     final totalSpacing = WidgetGridManager.cellSpacing * (gridColumns + 1);
     final cellWidth = (gridWidth - totalSpacing) / gridColumns;
     final cellHeight = cellWidth * 0.75; // Rechteckige Zellen (4:3 Verhältnis)
-    
+
     return CustomPaint(
       size: Size.infinite,
       painter: GridBackgroundPainter(
@@ -2222,7 +2625,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   Widget _buildDropZones(List<AnalysisWidgetModel> widgets) {
     return Stack(
       children: [
@@ -2249,15 +2652,15 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                   final hasCandidate = candidateData.isNotEmpty;
                   return Container(
                     decoration: BoxDecoration(
-                      color: hasCandidate 
+                      color: hasCandidate
                           ? CupertinoColors.activeBlue.withOpacity(0.2)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
                       border: hasCandidate
                           ? Border.all(
-                              color: CupertinoColors.activeBlue,
-                              width: 2,
-                            )
+                        color: CupertinoColors.activeBlue,
+                        width: 2,
+                      )
                           : null,
                     ),
                   );
@@ -2267,7 +2670,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ],
     );
   }
-  
+
   Widget _buildGridWidget({
     required AnalysisWidgetModel model,
     required int tabIndex,
@@ -2276,17 +2679,17 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     required bool isEditMode,
   }) {
     final activeTab = openTabs[tabIndex];
-    
+
     return Listener(
       behavior: HitTestBehavior.opaque,
       onPointerDown: (event) {
         if (isEditMode) {
           // Sofort blockieren, ohne auf Gesture-Erkennung zu warten
           _setWidgetBeingTouched(true);
-          
+
           // Wichtig: Sofort HapticFeedback für bessere Reaktion
           HapticFeedback.selectionClick();
-          
+
           // Stoppe aktives Scrolling sofort und verhindere weiteres Scrollen
           try {
             if (_scrollController.hasClients) {
@@ -2297,7 +2700,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           } catch (e) {
             // Error handling silent
           }
-          
+
           // Touch detected - _isWidgetBeingTouched set to true
         }
       },
@@ -2322,7 +2725,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         // Wichtig: onPanDown wird sofort beim Touch ausgelöst
         onPanDown: (details) {
           if (!isEditMode || model.isResizing) return;
-          
+
           // Sofort visuelles Feedback geben und Scrollen blockieren
           setState(() {
             _currentDragWidget = model;
@@ -2332,16 +2735,16 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             _dragPreviewPosition = model.position;
             _setWidgetBeingTouched(true); // Wichtig: Sofort setzen für AbsorbPointer
           });
-          
+
           HapticFeedback.selectionClick();
         },
         // Drag-Funktionalität für das gesamte Widget
         onPanStart: (details) {
           if (!isEditMode || model.isResizing) return;
-          
+
           // onPanDown hat bereits die wichtigsten Werte gesetzt
           // Hier nur noch fehlende Werte ergänzen
-          
+
           // Reset alle anderen Widgets
           for (var widget in openTabs[tabIndex].widgets) {
             if (widget != model) {
@@ -2349,16 +2752,16 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               widget.dragOffset = null;
             }
           }
-          
+
           // Setze den Scroll-Offset
           _dragStartScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
-          
+
           // Setze initiale dragOffset auf aktuelle Position
           model.dragOffset = Offset(
             model.position!.x.toDouble(),
             model.position!.y.toDouble(),
           );
-          
+
           // Starte Auto-Scroll gleich beim Start
           _startAutoScroll(details.globalPosition.dy, dragPositionX: details.globalPosition.dx);
         },
@@ -2369,9 +2772,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             // Kompensiere für Scroll-Offset-Änderungen
             final currentScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0.0;
             final scrollDelta = currentScrollOffset - _dragStartScrollOffset;
-            
+
             final delta = details.globalPosition - _dragStartPosition! + Offset(0, scrollDelta);
-            
+
             final currentGridColumns = WidgetGridManager.getResponsiveGridColumns(context);
             final screenWidth = MediaQuery.of(context).size.width;
             final gridWidth = screenWidth - 16;
@@ -2384,30 +2787,30 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
 
             // Harte Grenze bei 50 Zeilen
             final maxAllowedRow = 50 - model.gridHeight;
-            
+
             // Beschränke exactY auf die maximale erlaubte Position
             final clampedExactY = exactY.clamp(0.0, maxAllowedRow.toDouble());
-            
+
             // Berechne die nächste Grid-Position für die Vorschau
             final previewX = exactX.round().clamp(0, currentGridColumns - model.gridWidth);
             final previewY = clampedExactY.round().clamp(0, math.min(_currentGridRows - 1, maxAllowedRow));
-            
+
             final previewPosition = GridPosition(x: previewX.toInt(), y: previewY.toInt());
-            
+
             // Erweitere Grid wenn nötig (aber nur bis zur maximalen Position)
             if (previewY >= _currentGridRows - 2 && _currentGridRows < 50) {
               setState(() {
                 _currentGridRows = math.min(_currentGridRows + 1, 50);
               });
             }
-            
+
             // Zeige Warnung wenn versucht wird, über die Grenze zu ziehen
             if (exactY > maxAllowedRow && !_maxRowsWarningShown) {
               _maxRowsWarningShown = true;
-              
+
               // Haptisches Feedback für "harte Grenze"
               HapticFeedback.heavyImpact();
-              
+
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Row(
@@ -2433,7 +2836,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               if (WidgetGridManager.isValidPosition(openTabs[tabIndex].widgets, model, previewPosition)) {
                 _dragPreviewPosition = previewPosition;
               }
-              
+
               // Widget stoppt hart an der Grenze
               model.dragOffset = Offset(
                 exactX.clamp(0.0, (currentGridColumns - model.gridWidth).toDouble()),
@@ -2448,7 +2851,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         onPanEnd: (_) {
           if (!isEditMode || !model.isBeingDragged) return;
           // Pan ended
-          
+
           // Setze Widget auf die Vorschau-Position
           if (_dragPreviewPosition != null) {
             model.position = _dragPreviewPosition;
@@ -2456,7 +2859,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           } else {
             // No preview position, keeping current position
           }
-          
+
           model.isBeingDragged = false;
           model.dragOffset = null;  // Reset dragOffset
           _dragStartPosition = null;
@@ -2465,14 +2868,14 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           _dragPreviewPosition = null;
           _setWidgetBeingTouched(false); // Reset touch state
           _maxRowsWarningShown = false; // Reset warning flag
-          
+
           // Stoppe Auto-Scroll
           _stopAutoScroll();
-          
+
           // Drag ended, all values reset
-          
+
           HapticFeedback.mediumImpact();
-          
+
           // Verzögertes setState um Frame-Skipping zu vermeiden
           Future.microtask(() {
             if (mounted) {
@@ -2482,7 +2885,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         },
         onPanCancel: () {
           if (!isEditMode || !model.isBeingDragged) return;
-          
+
           // Reset alles wenn Geste abgebrochen wird
           model.isBeingDragged = false;
           model.dragOffset = null;
@@ -2491,311 +2894,311 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           _currentDragWidget = null;
           _dragPreviewPosition = null;
           _setWidgetBeingTouched(false);
-          
+
           setState(() {});
         },
-      child: Listener(
-        behavior: HitTestBehavior.opaque,
-        onPointerDown: (_) {
-          if (isEditMode) {
-            // Widget is being resized
-            // Touch detected - _isWidgetBeingTouched set to true
-          }
-        },
-        onPointerUp: (_) {
-          if (isEditMode && _currentDragWidget == null) {
-            // Drag ended
-          }
-        },
-        child: AnimatedScale(
-          duration: const Duration(milliseconds: 200),
-          scale: model.isBeingDragged ? 1.05 : 1.0,
-          child: Container(
-          decoration: BoxDecoration(
-            color: CupertinoColors.systemBackground.resolveFrom(context),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: CupertinoColors.systemGrey.withOpacity(
-                  model.isBeingDragged ? 0.3 : 0.1
-                ),
-                blurRadius: model.isBeingDragged ? 20 : 10,
-                offset: Offset(0, model.isBeingDragged ? 10 : 5),
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (_) {
+            if (isEditMode) {
+              // Widget is being resized
+              // Touch detected - _isWidgetBeingTouched set to true
+            }
+          },
+          onPointerUp: (_) {
+            if (isEditMode && _currentDragWidget == null) {
+              // Drag ended
+            }
+          },
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 200),
+            scale: model.isBeingDragged ? 1.05 : 1.0,
+            child: Container(
+              decoration: BoxDecoration(
+                color: CupertinoColors.systemBackground.resolveFrom(context),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: CupertinoColors.systemGrey.withOpacity(
+                        model.isBeingDragged ? 0.3 : 0.1
+                    ),
+                    blurRadius: model.isBeingDragged ? 20 : 10,
+                    offset: Offset(0, model.isBeingDragged ? 10 : 5),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Stack(
-              children: [
-              // Widget-Inhalt
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Stack(
                   children: [
-                    // Header
-                    SizedBox(
-                      height: 24,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    // Widget-Inhalt
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              model.title,
-                              style: TextStyle(
-                                fontSize: model.gridWidth >= 2 ? 14 : 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
+                          // Header
+                          SizedBox(
+                            height: 24,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    model.title,
+                                    style: TextStyle(
+                                      fontSize: model.gridWidth >= 2 ? 14 : 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                  ),
+                                ),
+                                if (model.type == 'chart' && !isEditMode && model.gridWidth >= 2)
+                                  GestureDetector(
+                                    onTap: () => _showWidgetSettings(tabIndex, widgetIndex),
+                                    child: Icon(
+                                      CupertinoIcons.settings,
+                                      size: 16,
+                                      color: CupertinoColors.systemGrey,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                          if (model.type == 'chart' && !isEditMode && model.gridWidth >= 2)
-                            GestureDetector(
-                              onTap: () => _showWidgetSettings(tabIndex, widgetIndex),
-                              child: Icon(
-                                CupertinoIcons.settings,
-                                size: 16,
-                                color: CupertinoColors.systemGrey,
-                              ),
+                          const SizedBox(height: 8),
+                          // Content
+                          Expanded(
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                return _buildScaledWidgetContent(
+                                  model: model,
+                                  data: data,
+                                  constraints: constraints,
+                                );
+                              },
                             ),
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    // Content
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return _buildScaledWidgetContent(
-                            model: model,
-                            data: data,
-                            constraints: constraints,
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              // Edit-Mode Overlay
-              if (isEditMode)
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: model.isResizing 
-                          ? CupertinoColors.activeBlue.withOpacity(0.1)
-                          : model.isBeingDragged
-                              ? CupertinoColors.systemGreen.withOpacity(0.1)
-                              : CupertinoColors.systemGrey.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: (model.isResizing || model.isBeingDragged)
-                          ? Border.all(
-                              color: model.isResizing 
+
+                    // Edit-Mode Overlay
+                    if (isEditMode)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: model.isResizing
+                                ? CupertinoColors.activeBlue.withOpacity(0.1)
+                                : model.isBeingDragged
+                                ? CupertinoColors.systemGreen.withOpacity(0.1)
+                                : CupertinoColors.systemGrey.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: (model.isResizing || model.isBeingDragged)
+                                ? Border.all(
+                              color: model.isResizing
                                   ? CupertinoColors.activeBlue
                                   : CupertinoColors.systemGreen,
                               width: 2,
                             )
-                          : null,
-                    ),
-                    child: Stack(
-                      children: [
-                        // Drag Indikator (nur visuell)
-                        Positioned(
-                          top: 5,
-                          left: 0,
-                          right: 0,
-                          child: Center(
-                            child: Container(
-                              width: 40,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: model.isBeingDragged
-                                    ? CupertinoColors.systemGreen
-                                    : CupertinoColors.systemGrey3.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Icon(
-                                CupertinoIcons.move,
-                                color: model.isBeingDragged
-                                    ? CupertinoColors.white
-                                    : CupertinoColors.systemGrey,
-                                size: 14,
-                              ),
-                            ),
+                                : null,
                           ),
-                        ),
-                        // Size Indicator während Resize
-                        if (model.isResizing)
-                          Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: CupertinoColors.systemBackground.resolveFrom(context),
-                                borderRadius: BorderRadius.circular(8),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: CupertinoColors.systemGrey.withOpacity(0.2),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
+                          child: Stack(
+                            children: [
+                              // Drag Indikator (nur visuell)
+                              Positioned(
+                                top: 5,
+                                left: 0,
+                                right: 0,
+                                child: Center(
+                                  child: Container(
+                                    width: 40,
+                                    height: 20,
+                                    decoration: BoxDecoration(
+                                      color: model.isBeingDragged
+                                          ? CupertinoColors.systemGreen
+                                          : CupertinoColors.systemGrey3.withOpacity(0.3),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      CupertinoIcons.move,
+                                      color: model.isBeingDragged
+                                          ? CupertinoColors.white
+                                          : CupertinoColors.systemGrey,
+                                      size: 14,
+                                    ),
                                   ),
-                                ],
-                              ),
-                              child: Text(
-                                _getSizeLabel(model.size),
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: CupertinoColors.activeBlue,
                                 ),
                               ),
-                            ),
-                          ),
-                        // Resize-Handle (Apple Style) mit größerem Touch-Bereich
-                        Positioned(
-                          right: -10,
-                          bottom: -10,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque, // Wichtig: Events nicht durchlassen
-                            onPanStart: (details) {
-                              setState(() {
-                                model.isResizing = true;
-                                model.isBeingDragged = false;
-                                _currentDragWidget = null; // Explizit Drag abbrechen
-                                _resizeStartPosition = details.globalPosition;
-                                _originalWidgetSize = model.size;
-                                _currentResizeWidget = model;
-                                _setWidgetBeingTouched(true); // Scrolling blockieren beim Resize
-                              });
-                              HapticFeedback.selectionClick();
-                            },
-                            onPanUpdate: (details) {
-                              if (_currentResizeWidget == model) {
-                                _handleWidgetResize(model, details, tabIndex);
-                              }
-                            },
-                            onPanEnd: (_) {
-                              setState(() {
-                                model.isResizing = false;
-                                _resizeStartPosition = null;
-                                _originalWidgetSize = null;
-                                _currentResizeWidget = null;
-                                _setWidgetBeingTouched(false); // Scrolling wieder erlauben
-                              });
-                              HapticFeedback.mediumImpact();
-                            },
-                            child: Container(
-                          width: 60, // Größerer Touch-Bereich
-                          height: 60,
-                          alignment: Alignment.bottomRight,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: model.isResizing ? 45 : 35,
-                            height: model.isResizing ? 45 : 35,
-                            margin: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: model.isResizing 
-                                  ? CupertinoColors.activeBlue
-                                  : CupertinoColors.activeBlue.withOpacity(0.3),
-                              borderRadius: BorderRadius.only(
-                                topLeft: Radius.circular(model.isResizing ? 22 : 18),
-                                bottomRight: Radius.circular(18),
-                              ),
-                              boxShadow: model.isResizing ? [
-                                BoxShadow(
-                                  color: CupertinoColors.activeBlue.withOpacity(0.4),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4),
+                              // Size Indicator während Resize
+                              if (model.isResizing)
+                                Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: CupertinoColors.systemBackground.resolveFrom(context),
+                                      borderRadius: BorderRadius.circular(8),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: CupertinoColors.systemGrey.withOpacity(0.2),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      _getSizeLabel(model.size),
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: CupertinoColors.activeBlue,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ] : null,
-                            ),
-                            child: Center(
-                              child: Transform.rotate(
-                                angle: model.isResizing ? math.pi / 4 : 0,
-                                child: Icon(
-                                  model.isResizing 
-                                      ? CupertinoIcons.resize
-                                      : CupertinoIcons.arrow_up_left_arrow_down_right,
-                                  color: model.isResizing 
-                                      ? CupertinoColors.white
-                                      : CupertinoColors.activeBlue,
-                                  size: model.isResizing ? 22 : 18,
+                              // Resize-Handle (Apple Style) mit größerem Touch-Bereich
+                              Positioned(
+                                right: -10,
+                                bottom: -10,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque, // Wichtig: Events nicht durchlassen
+                                  onPanStart: (details) {
+                                    setState(() {
+                                      model.isResizing = true;
+                                      model.isBeingDragged = false;
+                                      _currentDragWidget = null; // Explizit Drag abbrechen
+                                      _resizeStartPosition = details.globalPosition;
+                                      _originalWidgetSize = model.size;
+                                      _currentResizeWidget = model;
+                                      _setWidgetBeingTouched(true); // Scrolling blockieren beim Resize
+                                    });
+                                    HapticFeedback.selectionClick();
+                                  },
+                                  onPanUpdate: (details) {
+                                    if (_currentResizeWidget == model) {
+                                      _handleWidgetResize(model, details, tabIndex);
+                                    }
+                                  },
+                                  onPanEnd: (_) {
+                                    setState(() {
+                                      model.isResizing = false;
+                                      _resizeStartPosition = null;
+                                      _originalWidgetSize = null;
+                                      _currentResizeWidget = null;
+                                      _setWidgetBeingTouched(false); // Scrolling wieder erlauben
+                                    });
+                                    HapticFeedback.mediumImpact();
+                                  },
+                                  child: Container(
+                                    width: 60, // Größerer Touch-Bereich
+                                    height: 60,
+                                    alignment: Alignment.bottomRight,
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      width: model.isResizing ? 45 : 35,
+                                      height: model.isResizing ? 45 : 35,
+                                      margin: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: model.isResizing
+                                            ? CupertinoColors.activeBlue
+                                            : CupertinoColors.activeBlue.withOpacity(0.3),
+                                        borderRadius: BorderRadius.only(
+                                          topLeft: Radius.circular(model.isResizing ? 22 : 18),
+                                          bottomRight: Radius.circular(18),
+                                        ),
+                                        boxShadow: model.isResizing ? [
+                                          BoxShadow(
+                                            color: CupertinoColors.activeBlue.withOpacity(0.4),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 4),
+                                          ),
+                                        ] : null,
+                                      ),
+                                      child: Center(
+                                        child: Transform.rotate(
+                                          angle: model.isResizing ? math.pi / 4 : 0,
+                                          child: Icon(
+                                            model.isResizing
+                                                ? CupertinoIcons.resize
+                                                : CupertinoIcons.arrow_up_left_arrow_down_right,
+                                            color: model.isResizing
+                                                ? CupertinoColors.white
+                                                : CupertinoColors.activeBlue,
+                                            size: model.isResizing ? 22 : 18,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                        ),
-                          ),
-                        ),
-                        
-                        // Delete Button
-                        Positioned(
-                          right: 4,
-                          top: 4,
-                          child: GestureDetector(
-                            onTap: () => _deleteWidget(tabIndex, widgetIndex),
-                            child: Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: CupertinoColors.systemRed.withOpacity(0.9),
-                                shape: BoxShape.circle,
+
+                              // Delete Button
+                              Positioned(
+                                right: 4,
+                                top: 4,
+                                child: GestureDetector(
+                                  onTap: () => _deleteWidget(tabIndex, widgetIndex),
+                                  child: Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(
+                                      color: CupertinoColors.systemRed.withOpacity(0.9),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      CupertinoIcons.xmark,
+                                      color: CupertinoColors.white,
+                                      size: 14,
+                                    ),
+                                  ),
+                                ),
                               ),
-                              child: const Icon(
-                                CupertinoIcons.xmark,
-                                color: CupertinoColors.white,
-                                size: 14,
-                              ),
-                            ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
-    ),
-    ),
-  );
-}
-  
+    );
+  }
+
   void _handleWidgetResize(AnalysisWidgetModel widget, DragUpdateDetails details, int tabIndex) {
     if (_resizeStartPosition == null || _originalWidgetSize == null) return;
-    
+
     // Berechne die Drag-Distanz seit Start
     final dragDelta = details.globalPosition - _resizeStartPosition!;
-    
+
     // Schwellenwerte für Größenänderung
     const gridStepThreshold = 40.0; // Pixel pro Grid-Schritt
-    
+
     // Berechne gewünschte Breiten- und Höhenänderung basierend auf Drag-Richtung
     final widthSteps = (dragDelta.dx / gridStepThreshold).round();
     final heightSteps = (dragDelta.dy / gridStepThreshold).round();
-    
+
     // Aktuelle Größe analysieren
     final currentWidth = widget.gridWidth;
     final currentHeight = widget.gridHeight;
     final originalWidth = _getWidgetWidth(_originalWidgetSize!);
     final originalHeight = _getWidgetHeight(_originalWidgetSize!);
-    
+
     // Neue Breite und Höhe berechnen
     final newWidth = (originalWidth + widthSteps).clamp(1, 4);
     final newHeight = (originalHeight + heightSteps).clamp(1, 4);
-    
+
     // Finde die beste passende Größe
     AnalysisWidgetSize? bestSize = _findBestSize(newWidth, newHeight);
-    
+
     if (bestSize != null && bestSize != widget.size) {
       // Setze neue Größe temporär
       final originalSize = widget.size;
       widget.size = bestSize;
-      
+
       // Prüfe ob die neue Größe gültig ist
       if (!WidgetGridManager.isValidPosition(openTabs[tabIndex].widgets, widget, widget.position!)) {
         // Zurücksetzen wenn nicht gültig
@@ -2806,7 +3209,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       }
     }
   }
-  
+
   int _getWidgetWidth(AnalysisWidgetSize size) {
     switch (size) {
       case AnalysisWidgetSize.smallSquare:
@@ -2823,9 +3226,15 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       case AnalysisWidgetSize.massive:
       case AnalysisWidgetSize.fullWidth:
         return 4;
+      case AnalysisWidgetSize.ultraWide:
+        return 5;
+      case AnalysisWidgetSize.megaChart:
+        return 6;
+      case AnalysisWidgetSize.maxChart:
+        return 8;
     }
   }
-  
+
   int _getWidgetHeight(AnalysisWidgetSize size) {
     switch (size) {
       case AnalysisWidgetSize.smallSquare:
@@ -2839,12 +3248,16 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         return 2;
       case AnalysisWidgetSize.extraTall:
       case AnalysisWidgetSize.massive:
+      case AnalysisWidgetSize.ultraWide:
         return 3;
       case AnalysisWidgetSize.fullWidth:
+      case AnalysisWidgetSize.megaChart:
         return 4;
+      case AnalysisWidgetSize.maxChart:
+        return 6;
     }
   }
-  
+
   AnalysisWidgetSize? _findBestSize(int targetWidth, int targetHeight) {
     // Finde die Größe, die am besten zu den Zielmaßen passt
     final sizes = [
@@ -2859,36 +3272,36 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       AnalysisWidgetSize.massive,       // 4x3
       AnalysisWidgetSize.fullWidth,     // 4x4
     ];
-    
+
     for (var size in sizes) {
       if (_getWidgetWidth(size) == targetWidth && _getWidgetHeight(size) == targetHeight) {
         return size;
       }
     }
-    
+
     // Wenn keine exakte Übereinstimmung, finde die nächstbeste
     AnalysisWidgetSize? closestSize;
     int minDifference = 999;
-    
+
     for (var size in sizes) {
       final widthDiff = (_getWidgetWidth(size) - targetWidth).abs();
       final heightDiff = (_getWidgetHeight(size) - targetHeight).abs();
       final totalDiff = widthDiff + heightDiff;
-      
+
       if (totalDiff < minDifference) {
         minDifference = totalDiff;
         closestSize = size;
       }
     }
-    
+
     return closestSize;
   }
-  
+
   // Hilfsvariablen für Resize
   Offset? _resizeStartPosition;
   AnalysisWidgetSize? _originalWidgetSize;
   AnalysisWidgetModel? _currentResizeWidget;
-  
+
   // Hilfsvariablen für Drag
   Offset? _dragStartPosition;
   GridPosition? _dragStartGridPosition;
@@ -2896,21 +3309,21 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   GridPosition? _dragPreviewPosition;
   bool _isWidgetBeingTouched = false;
   double _dragStartScrollOffset = 0.0;
-  
+
   // ScrollController für Auto-Scroll beim Drag
   ScrollController _scrollController = ScrollController();
   double? _lockedScrollPosition;
   Timer? _autoScrollTimer;
-  
+
   // Grid-Zeilen Management
   int _currentGridRows = 10; // Start mit 10 Zeilen
   bool _maxRowsWarningShown = false; // Flag für die Warnung bei max Zeilen
-  
+
   void _setWidgetBeingTouched(bool value) {
     if (_isWidgetBeingTouched != value) {
       _isWidgetBeingTouched = value;
       widget.onWidgetTouchChanged?.call(value);
-      
+
       // Lock scroll positions when widget is touched
       if (value) {
         _lockedScrollPosition = _scrollController.hasClients ? _scrollController.offset : null;
@@ -2919,7 +3332,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       }
     }
   }
-  
+
   void _startAutoScroll(double dragPositionY, {double? dragPositionX}) {
     _autoScrollTimer?.cancel();
 
@@ -2934,7 +3347,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       // Oberer Rand
       if (dragPositionY < edgeThreshold) {
         scrollDeltaY = -scrollSpeed * (1 - dragPositionY / edgeThreshold);
-      } 
+      }
       // Unterer Rand
       else if (dragPositionY > viewportHeight - edgeThreshold) {
         scrollDeltaY = scrollSpeed * ((dragPositionY - (viewportHeight - edgeThreshold)) / edgeThreshold);
@@ -2947,16 +3360,16 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           timer.cancel();
           return;
         }
-        
+
         if (_scrollController.hasClients) {
           final pos = _scrollController.position;
           final oldOffset = _scrollController.offset;
           final newOffset = (oldOffset + scrollDeltaY).clamp(pos.minScrollExtent, pos.maxScrollExtent);
-          
+
           if (oldOffset != newOffset) {
             setState(() {
               _scrollController.jumpTo(newOffset);
-              
+
               // Berechne wie viele Grid-Zellen gescrollt wurden
               final scrollDelta = newOffset - oldOffset;
               final currentGridColumns = WidgetGridManager.getResponsiveGridColumns(context);
@@ -2965,23 +3378,23 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               final totalSpacing = WidgetGridManager.cellSpacing * (currentGridColumns + 1);
               final cellWidth = (gridWidth - totalSpacing) / currentGridColumns;
               final cellHeight = cellWidth * 0.75;
-              
+
               // Konvertiere Pixel in Grid-Einheiten
               final gridScrollDelta = scrollDelta / (cellHeight + WidgetGridManager.cellSpacing);
-              
+
               // Bewege das Widget mit dem Scroll
               if (_currentDragWidget!.dragOffset != null) {
                 _currentDragWidget!.dragOffset = Offset(
-                  _currentDragWidget!.dragOffset!.dx,
-                  _currentDragWidget!.dragOffset!.dy - gridScrollDelta
+                    _currentDragWidget!.dragOffset!.dx,
+                    _currentDragWidget!.dragOffset!.dy - gridScrollDelta
                 );
-                
+
                 // Update auch die Vorschau-Position
                 final previewY = _currentDragWidget!.dragOffset!.dy.round();
                 final previewX = _currentDragWidget!.dragOffset!.dx.round();
                 _dragPreviewPosition = GridPosition(
-                  x: previewX.clamp(0, currentGridColumns - _currentDragWidget!.gridWidth),
-                  y: previewY.clamp(0, 50 - _currentDragWidget!.gridHeight)
+                    x: previewX.clamp(0, currentGridColumns - _currentDragWidget!.gridWidth),
+                    y: previewY.clamp(0, 50 - _currentDragWidget!.gridHeight)
                 );
               }
             });
@@ -2990,13 +3403,13 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       });
     }
   }
-  
+
   void _stopAutoScroll() {
     _autoScrollTimer?.cancel();
     _autoScrollTimer = null;
   }
-  
-  
+
+
   String _getSizeLabel(AnalysisWidgetSize size) {
     switch (size) {
       case AnalysisWidgetSize.smallSquare:
@@ -3019,9 +3432,15 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         return '4×3';
       case AnalysisWidgetSize.fullWidth:
         return '4×4';
+      case AnalysisWidgetSize.ultraWide:
+        return '5×3';
+      case AnalysisWidgetSize.megaChart:
+        return '6×4';
+      case AnalysisWidgetSize.maxChart:
+        return '8×6';
     }
   }
-  
+
   Widget _buildScaledWidgetContent({
     required AnalysisWidgetModel model,
     required List<SensorReading> data,
@@ -3029,7 +3448,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
   }) {
     // Skaliere Content basierend auf verfügbarem Platz
     final isSmallWidget = model.gridWidth == 1 || model.gridHeight == 1;
-    
+
     if (model is ChartWidgetModel) {
       return _buildChartContent(model, data, isSmallWidget);
     } else if (model is StatisticsWidgetModel) {
@@ -3039,11 +3458,35 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     } else if (model is DutyCycleWidgetModel) {
       return _buildDutyCycleContent(model, isSmallWidget);
     }
-    
+
     return Container();
   }
-  
+
   Widget _buildChartContent(ChartWidgetModel model, List<SensorReading> data, bool isSmall) {
+    // Verwende das optimierte Chart Widget für bessere Performance
+    return OptimizedChartWidget(
+      model: model,
+      data: data,
+      isSmall: isSmall,
+      isRecording: widget.isRecording,
+      onRecordingChanged: widget.onRecordingChanged,
+      onModelUpdate: (updatedModel) {
+        // Update das Model im Tab
+        setState(() {
+          for (int i = 0; i < openTabs.length; i++) {
+            for (int j = 0; j < openTabs[i].widgets.length; j++) {
+              if (openTabs[i].widgets[j].id == updatedModel.id) {
+                openTabs[i].widgets[j] = updatedModel;
+                return;
+              }
+            }
+          }
+        });
+      },
+    );
+  }
+
+  Widget _buildChartContentOld(ChartWidgetModel model, List<SensorReading> data, bool isSmall) {
     if (data.isEmpty) {
       return Center(
         child: Text(
@@ -3055,17 +3498,47 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         ),
       );
     }
-    
+
     // Verwende die letzten Datenpunkte
     final displayRange = model.displayRange;
     final now = DateTime.now();
     final startTime = now.subtract(Duration(seconds: displayRange));
-    
+
     // Filtere Daten basierend auf Zeitfenster
-    final recentData = data.where((reading) => 
-      reading.timestamp.isAfter(startTime)
+    final recentData = data.where((reading) =>
+        reading.timestamp.isAfter(startTime)
     ).toList();
-    
+
+    // Trigger-Überprüfung: Stoppe Aufnahme wenn Schwellenwert überschritten
+    if (model.triggerEnabled && this.widget.isRecording && recentData.isNotEmpty) {
+      final lastReading = recentData.last;
+      bool triggerExceeded = false;
+
+      if (model.upperThreshold != null &&
+          (lastReading.x > model.upperThreshold! || lastReading.y > model.upperThreshold!)) {
+        triggerExceeded = true;
+      }
+
+      if (model.lowerThreshold != null &&
+          (lastReading.x < model.lowerThreshold! || lastReading.y < model.lowerThreshold!)) {
+        triggerExceeded = true;
+      }
+
+      if (triggerExceeded) {
+        // Stoppe die Aufnahme
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          this.widget.onRecordingChanged(false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Aufnahme gestoppt: Trigger-Schwellenwert überschritten'),
+              backgroundColor: CupertinoColors.systemOrange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        });
+      }
+    }
+
     if (recentData.isEmpty) {
       return Center(
         child: Text(
@@ -3077,148 +3550,340 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         ),
       );
     }
-    
+
+    // Verwende die gefilterten Daten direkt
+    final dataToDisplay = recentData;
+
     // Konvertiere zu Zeitbasiertem Chart
-    final spots = recentData.asMap().entries.map((entry) {
+    final spots = dataToDisplay.map((reading) {
+      // Verwende die Zeit seit dem Startpunkt in Sekunden
+      final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
       return FlSpot(
-        entry.key.toDouble(), // Index als X
-        entry.value.y,        // Y-Wert des Sensors
+        timeDiff, // Zeit in Sekunden seit Startzeit
+        reading.y, // Y-Wert des Sensors
       );
     }).toList();
-    
+
+    // Berechne den tatsächlichen X-Bereich für volle Nutzung
+    double actualMinX = 0;
+    double actualMaxX = model.displayRange.toDouble();
+
+    if (spots.isNotEmpty) {
+      // Finde den tatsächlichen Bereich der Daten
+      actualMinX = spots.first.x;
+      actualMaxX = math.max(spots.last.x, actualMinX + 1); // Mindestens 1 Sekunde Bereich
+    }
+
     // Berechne Min/Max für beide Achsen
-    final xSensorValues = recentData.map((r) => r.x).toList();
-    final ySensorValues = recentData.map((r) => r.y).toList();
-    
+    final xSensorValues = dataToDisplay.map((r) => r.x).toList();
+    final ySensorValues = dataToDisplay.map((r) => r.y).toList();
+
     final allValues = [...xSensorValues, ...ySensorValues];
     final minValue = allValues.isNotEmpty ? allValues.reduce(math.min) : 0;
     final maxValue = allValues.isNotEmpty ? allValues.reduce(math.max) : 100;
     final padding = (maxValue - minValue) * 0.1;
-    
-    return LineChart(
-      LineChartData(
-        minX: 0,
-        maxX: recentData.length.toDouble() - 1,
-        minY: minValue - padding,
-        maxY: maxValue + padding,
-        gridData: FlGridData(
-          show: model.showGrid,
-          drawVerticalLine: true,
-          drawHorizontalLine: true,
-          horizontalInterval: (maxValue - minValue) / 5,
-          verticalInterval: recentData.length > 5 ? recentData.length / 5 : 1,
-          getDrawingHorizontalLine: (value) {
-            return FlLine(
-              color: CupertinoColors.systemGrey4.withOpacity(0.3),
-              strokeWidth: 1,
-            );
-          },
-          getDrawingVerticalLine: (value) {
-            return FlLine(
-              color: CupertinoColors.systemGrey4.withOpacity(0.3),
-              strokeWidth: 1,
-            );
-          },
-        ),
-        titlesData: FlTitlesData(
-          show: !isSmall,
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: !isSmall,
-              reservedSize: 40,
-              interval: (maxValue - minValue) / 4,
-              getTitlesWidget: (value, meta) => Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text(
-                  value.toStringAsFixed(1),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: CupertinoColors.systemGrey,
+
+    return Column(
+      children: [
+        // Kontrollen für Zeitskala und Play/Pause
+        if (model.showTimeControls) Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Zeitskala-Auswahl
+              PopupMenuButton<int>(
+                initialValue: model.displayRange,
+                onSelected: (value) {
+                  // Finde den Tab und Widget Index
+                  for (int i = 0; i < openTabs.length; i++) {
+                    for (int j = 0; j < openTabs[i].widgets.length; j++) {
+                      if (openTabs[i].widgets[j] == model) {
+                        setState(() {
+                          openTabs[i].widgets[j] = ChartWidgetModel(
+                            id: model.id,
+                            title: model.title,
+                            showGrid: model.showGrid,
+                            showLegend: model.showLegend,
+                            displayRange: value,
+                            showTimeControls: model.showTimeControls,
+                            triggerEnabled: model.triggerEnabled,
+                            upperThreshold: model.upperThreshold,
+                            lowerThreshold: model.lowerThreshold,
+                            lineThickness: model.lineThickness,
+                            size: model.size,
+                            position: model.position,
+                          );
+                        });
+                        break;
+                      }
+                    }
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(value: 1, child: Text('1 Sekunde')),
+                  PopupMenuItem(value: 2, child: Text('2 Sekunden')),
+                  PopupMenuItem(value: 5, child: Text('5 Sekunden')),
+                  PopupMenuItem(value: 10, child: Text('10 Sekunden')),
+                  PopupMenuItem(value: 30, child: Text('30 Sekunden')),
+                  PopupMenuItem(value: 60, child: Text('1 Minute')),
+                  PopupMenuItem(value: 120, child: Text('2 Minuten')),
+                  PopupMenuItem(value: 300, child: Text('5 Minuten')),
+                ],
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: CupertinoColors.systemGrey4),
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  textAlign: TextAlign.right,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.access_time, size: 16, color: CupertinoColors.systemGrey),
+                      const SizedBox(width: 6),
+                      Text(
+                        model.displayRange < 60
+                            ? '${model.displayRange} Sek'
+                            : '${model.displayRange ~/ 60} Min',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.arrow_drop_down, size: 18, color: CupertinoColors.systemGrey),
+                    ],
+                  ),
                 ),
               ),
-            ),
+
+              // Play/Pause Button
+              IconButton(
+                icon: Icon(
+                  this.widget.isRecording ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                  color: this.widget.isRecording ? CupertinoColors.systemOrange : CupertinoColors.systemGreen,
+                  size: 32,
+                ),
+                onPressed: () => this.widget.onRecordingChanged(!this.widget.isRecording),
+                padding: EdgeInsets.zero,
+                constraints: BoxConstraints(),
+              ),
+            ],
           ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: !isSmall,
-              reservedSize: 30,
-              interval: recentData.length > 4 ? recentData.length / 4 : 1,
-              getTitlesWidget: (value, meta) => Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  value.toStringAsFixed(1),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: CupertinoColors.systemGrey,
-                  ),
+        ),
+        if (model.showTimeControls) const Divider(height: 1),
+
+        // Legende (wenn aktiviert)
+        if (model.showLegend && !isSmall) Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 20,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemRed,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              const Text('X-Achse', style: TextStyle(fontSize: 12)),
+              const SizedBox(width: 24),
+              Container(
+                width: 20,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: CupertinoColors.activeBlue,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Y-Achse', style: TextStyle(fontSize: 12)),
+            ],
           ),
-          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
-        borderData: FlBorderData(
-          show: true,
-          border: Border.all(
-            color: CupertinoColors.systemGrey4.withOpacity(0.5),
-            width: 1,
-          ),
-        ),
-        lineBarsData: [
-          // X-Achse Daten (rot)
-          LineChartBarData(
-            spots: spots.map((spot) => FlSpot(
-              spot.x,
-              recentData[spot.x.toInt()].x.toDouble(),
-            )).toList(),
-            isCurved: true,
-            color: CupertinoColors.systemRed,
-            barWidth: isSmall ? 1.5 : 2.5,
-            isStrokeCapRound: true,
-            dotData: FlDotData(show: false),
-            belowBarData: BarAreaData(show: false),
-          ),
-          // Y-Achse Daten (blau)
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: CupertinoColors.activeBlue,
-            barWidth: isSmall ? 1.5 : 2.5,
-            isStrokeCapRound: true,
-            dotData: FlDotData(show: false),
-            belowBarData: BarAreaData(show: false),
-          ),
-        ],
-        lineTouchData: LineTouchData(
-          enabled: !isSmall,
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (touchedSpots) {
-              return touchedSpots.map((spot) {
-                final index = spot.x.toInt();
-                if (index >= 0 && index < recentData.length) {
-                  final reading = recentData[index];
-                  final isXLine = spot.barIndex == 0;
-                  return LineTooltipItem(
-                    '${isXLine ? "X" : "Y"}: ${spot.y.toStringAsFixed(2)}',
-                    TextStyle(
-                      color: isXLine ? CupertinoColors.systemRed : CupertinoColors.activeBlue,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
+
+        // Chart
+        Expanded(
+          child: ClipRect(
+            child: LineChart(
+              LineChartData(
+                clipData: FlClipData.all(),
+                minX: actualMinX,
+                maxX: actualMaxX,
+                minY: minValue - padding,
+                maxY: maxValue + padding,
+                gridData: FlGridData(
+                  show: model.showGrid,
+                  drawVerticalLine: true,
+                  drawHorizontalLine: true,
+                  horizontalInterval: (maxValue - minValue) / 5,
+                  verticalInterval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 5 : (actualMaxX - actualMinX) / 4,
+                  getDrawingHorizontalLine: (value) {
+                    return FlLine(
+                      color: CupertinoColors.systemGrey4.withOpacity(0.3),
+                      strokeWidth: 1,
+                    );
+                  },
+                  getDrawingVerticalLine: (value) {
+                    return FlLine(
+                      color: CupertinoColors.systemGrey4.withOpacity(0.3),
+                      strokeWidth: 1,
+                    );
+                  },
+                ),
+                titlesData: FlTitlesData(
+                  show: !isSmall,
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: !isSmall,
+                      reservedSize: 40,
+                      interval: (maxValue - minValue) / 4,
+                      getTitlesWidget: (value, meta) => Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Text(
+                          value.toStringAsFixed(1),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: CupertinoColors.systemGrey,
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
                     ),
-                  );
-                }
-                return null;
-              }).whereType<LineTooltipItem>().toList();
-            },
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: !isSmall,
+                      reservedSize: 30,
+                      interval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 4 : (actualMaxX - actualMinX) / 5,
+                      getTitlesWidget: (value, meta) {
+                        // Zeige Zeitangaben relativ zur aktuellen Zeit
+                        final seconds = model.displayRange - value;
+                        String label;
+                        if (seconds < 60) {
+                          label = '-${seconds.toInt()}s';
+                        } else {
+                          label = '-${(seconds / 60).toStringAsFixed(1)}m';
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: CupertinoColors.systemGrey,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                ),
+                borderData: FlBorderData(
+                  show: true,
+                  border: Border.all(
+                    color: CupertinoColors.systemGrey4.withOpacity(0.5),
+                    width: 1,
+                  ),
+                ),
+                lineBarsData: [
+                  // X-Achse Daten (rot)
+                  LineChartBarData(
+                    spots: dataToDisplay.map((reading) {
+                      final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+                      return FlSpot(
+                        timeDiff,
+                        reading.x.toDouble(),
+                      );
+                    }).toList(),
+                    isCurved: false,
+                    color: CupertinoColors.systemRed,
+                    barWidth: model.lineThickness,
+                    isStrokeCapRound: true,
+                    dotData: FlDotData(show: false),
+                    belowBarData: BarAreaData(show: false),
+                    preventCurveOverShooting: true,
+                  ),
+                  // Y-Achse Daten (blau)
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: false,
+                    color: CupertinoColors.activeBlue,
+                    barWidth: model.lineThickness,
+                    isStrokeCapRound: true,
+                    dotData: FlDotData(show: false),
+                    belowBarData: BarAreaData(show: false),
+                    preventCurveOverShooting: true,
+                  ),
+                ],
+                extraLinesData: ExtraLinesData(
+                  horizontalLines: [
+                    if (model.triggerEnabled && model.upperThreshold != null)
+                      HorizontalLine(
+                        y: model.upperThreshold!,
+                        color: CupertinoColors.systemOrange,
+                        strokeWidth: 2,
+                        dashArray: [5, 5],
+                        label: HorizontalLineLabel(
+                          show: true,
+                          labelResolver: (line) => 'Oberer Schwellenwert: ${line.y.toStringAsFixed(1)}',
+                          style: const TextStyle(
+                            color: CupertinoColors.systemOrange,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    if (model.triggerEnabled && model.lowerThreshold != null)
+                      HorizontalLine(
+                        y: model.lowerThreshold!,
+                        color: CupertinoColors.systemOrange,
+                        strokeWidth: 2,
+                        dashArray: [5, 5],
+                        label: HorizontalLineLabel(
+                          show: true,
+                          labelResolver: (line) => 'Unterer Schwellenwert: ${line.y.toStringAsFixed(1)}',
+                          style: const TextStyle(
+                            color: CupertinoColors.systemOrange,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                lineTouchData: LineTouchData(
+                  enabled: !isSmall,
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (touchedSpots) {
+                      return touchedSpots.map((spot) {
+                        final index = spot.x.toInt();
+                        if (index >= 0 && index < recentData.length) {
+                          final reading = recentData[index];
+                          final isXLine = spot.barIndex == 0;
+                          return LineTooltipItem(
+                            '${isXLine ? "X" : "Y"}: ${spot.y.toStringAsFixed(2)}',
+                            TextStyle(
+                              color: isXLine ? CupertinoColors.systemRed : CupertinoColors.activeBlue,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          );
+                        }
+                        return null;
+                      }).whereType<LineTooltipItem>().toList();
+                    },
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
-  
+
   Widget _buildStatisticsContent(StatisticsWidgetModel model, List<SensorReading> data, bool isSmall) {
     if (data.isEmpty) {
       return Center(
@@ -3231,17 +3896,17 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         ),
       );
     }
-    
+
     final xValues = data.map((r) => r.x).toList();
     final yValues = data.map((r) => r.y).toList();
-    
+
     final stats = {
       'Min X': xValues.reduce(math.min).toStringAsFixed(2),
       'Max X': xValues.reduce(math.max).toStringAsFixed(2),
       'Min Y': yValues.reduce(math.min).toStringAsFixed(2),
       'Max Y': yValues.reduce(math.max).toStringAsFixed(2),
     };
-    
+
     return Padding(
       padding: EdgeInsets.all(isSmall ? 4 : 8),
       child: GridView.count(
@@ -3287,7 +3952,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   Widget _buildFrequencyContent(FrequencyWidgetModel model, bool isSmall) {
     return Padding(
       padding: EdgeInsets.all(isSmall ? 4 : 8),
@@ -3300,7 +3965,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   Widget _buildFrequencyItem(String label, double frequency, bool isSmall) {
     return Column(
       children: [
@@ -3325,7 +3990,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ],
     );
   }
-  
+
   Widget _buildDutyCycleContent(DutyCycleWidgetModel model, bool isSmall) {
     return Padding(
       padding: EdgeInsets.all(isSmall ? 4 : 8),
@@ -3338,7 +4003,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   Widget _buildDutyCycleItem(String label, int duty, bool isSmall) {
     return Column(
       children: [
@@ -3363,8 +4028,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ],
     );
   }
-  
-  
+
+
   Widget _buildAnalysisWidget({
     required Key key,
     required AnalysisWidgetModel model,
@@ -3424,13 +4089,13 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Widget Content basierend auf Typ
-                _buildWidgetContent(model, data),
+                _buildWidgetContent(model, data, tabIndex, widgetIndex),
               ],
             ),
           ),
-          
+
           // Edit Mode Overlay
           if (isEditMode) ...[
             // Drag Handle
@@ -3445,7 +4110,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                 ),
               ),
             ),
-            
+
             // Delete Button
             Positioned(
               top: 8,
@@ -3473,16 +4138,16 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
     );
   }
 
-  Widget _buildWidgetContent(AnalysisWidgetModel model, List<SensorReading> data) {
+  Widget _buildWidgetContent(AnalysisWidgetModel model, List<SensorReading> data, int tabIndex, int widgetIndex) {
     switch (model.type) {
       case 'chart':
         final chartModel = model as ChartWidgetModel;
         final homeState = context.findAncestorStateOfType<_HomePageState>();
-        
+
         // Finde den aktuellen Tab-Index und überprüfe ob es ein Live-Tab ist
         int? currentTabIndex;
         bool isLiveTab = false;
-        
+
         // Suche nach dem Tab-Index über den Build-Context
         for (int i = 0; i < openTabs.length; i++) {
           if (openTabs[i].widgets.contains(model)) {
@@ -3491,45 +4156,10 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             break;
           }
         }
-        
-        return Column(
-          children: [
-            // Zeitkontrollen und Play-Button (nur bei Live-Tabs und wenn aktiviert)
-            if (chartModel.showTimeControls && isLiveTab) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Zeitfenster-Auswahl
-                    homeState?._buildTimeWindowSelector() 
-                      ?? const Text('Zeitfenster'),
-                    
-                    // Play/Pause Button
-                    IconButton(
-                      icon: Icon(
-                        widget.isRecording ? Icons.pause : Icons.play_arrow,
-                        size: 28,
-                      ),
-                      onPressed: () => widget.onRecordingChanged(!widget.isRecording),
-                      color: widget.isRecording ? Colors.orange : Colors.green,
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-            ],
-            
-            // Chart
-            SizedBox(
-              height: chartModel.showTimeControls && isLiveTab ? 200 : 250,
-              child: homeState?._buildDualAxisChart(
-                data: data,
-              ) ?? const Center(child: Text('Chart nicht verfügbar')),
-            ),
-          ],
-        );
-        
+
+        // Chart direkt ohne zusätzliche Kontrollen, da sie jetzt im Chart selbst sind
+        return _buildChartContent(chartModel, data, false);
+
       case 'statistics':
         final statsModel = model as StatisticsWidgetModel;
         final stats = _calculateStatistics(data);
@@ -3614,7 +4244,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             ],
           ],
         );
-        
+
       case 'frequency':
         final freqModel = model as FrequencyWidgetModel;
         final homePageState = context.findAncestorStateOfType<_HomePageState>();
@@ -3649,7 +4279,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               ),
           ],
         );
-        
+
       case 'duty_cycle':
         final dutyModel = model as DutyCycleWidgetModel;
         final homePageState = context.findAncestorStateOfType<_HomePageState>();
@@ -3677,7 +4307,77 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             ],
           ),
         );
-        
+
+      case 'average':
+        final avgModel = model as AverageWidgetModel;
+        final stats = _calculateStatistics(data);
+        return Column(
+          children: [
+            if (avgModel.showXAverage) ...[
+              Text(
+                'X-ACHSE DURCHSCHNITT',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                  letterSpacing: 0.06,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.all(16),
+                child: _buildIOSStatCard('AVG', stats['xAvg'].toStringAsFixed(avgModel.decimalPlaces), 'mT', CupertinoColors.label),
+              ),
+            ],
+            if (avgModel.showXAverage && avgModel.showYAverage) const SizedBox(height: 16),
+            if (avgModel.showYAverage) ...[
+              Text(
+                'Y-ACHSE DURCHSCHNITT',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                  letterSpacing: 0.06,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.all(16),
+                child: _buildIOSStatCard('AVG', stats['yAvg'].toStringAsFixed(avgModel.decimalPlaces), 'mT', CupertinoColors.label),
+              ),
+            ],
+            if ((avgModel.showXAverage || avgModel.showYAverage) && avgModel.showMagnitude) const SizedBox(height: 16),
+            if (avgModel.showMagnitude) ...[
+              Text(
+                'DURCHSCHNITTLICHE MAGNITUDE',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                  letterSpacing: 0.06,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.all(16),
+                child: _buildIOSStatCard('MAG', stats['avgMagnitude'].toStringAsFixed(avgModel.decimalPlaces), 'mT', CupertinoColors.label),
+              ),
+            ],
+          ],
+        );
+
       default:
         return const Center(child: Text('Unbekannter Widget-Typ'));
     }
@@ -3716,7 +4416,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   Widget _buildIOSStatCard(String label, String value, String unit, Color color) {
     return Flexible(
       child: Column(
@@ -3764,7 +4464,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   Widget _buildIOSWidgetOption({
     required IconData icon,
     required Color iconColor,
@@ -4069,84 +4769,98 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                       ),
                     ),
                   ),
-                const SizedBox(height: 20),
-                // Widget Options
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: CupertinoColors.systemBackground.resolveFrom(context),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Column(
-                        children: [
-                          _buildIOSWidgetOption(
-                            icon: CupertinoIcons.chart_bar_square,
-                            iconColor: CupertinoColors.systemGrey,
-                            title: 'Sensor-Diagramm',
-                            subtitle: 'Live X/Y Datenvisualisierung',
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showWidgetSizeSelector(
-                                tabIndex: tabIndex,
-                                widgetType: 'chart',
-                                title: 'Sensor-Diagramm',
-                              );
-                            },
-                          ),
-                          _buildIOSWidgetOption(
-                            icon: CupertinoIcons.chart_bar_alt_fill,
-                            iconColor: CupertinoColors.systemGrey2,
-                            title: 'Statistiken',
-                            subtitle: 'Min, Max, Avg, Standardabweichung',
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showWidgetSizeSelector(
-                                tabIndex: tabIndex,
-                                widgetType: 'statistics',
-                                title: 'Statistiken',
-                              );
-                            },
-                          ),
-                          _buildIOSWidgetOption(
-                            icon: CupertinoIcons.speedometer,
-                            iconColor: CupertinoColors.systemGrey,
-                            title: 'Frequenz-Anzeige',
-                            subtitle: 'BLE & Regelkreis-Frequenzen',
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showWidgetSizeSelector(
-                                tabIndex: tabIndex,
-                                widgetType: 'frequency',
-                                title: 'Frequenzen',
-                              );
-                            },
-                          ),
-                          _buildIOSWidgetOption(
-                            icon: CupertinoIcons.gauge,
-                            iconColor: CupertinoColors.systemGrey2,
-                            title: 'Duty Cycles',
-                            subtitle: 'PWM Ausgangsleistung',
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showWidgetSizeSelector(
-                                tabIndex: tabIndex,
-                                widgetType: 'duty_cycle',
-                                title: 'Duty Cycles',
-                              );
-                            },
-                          ),
-                        ],
+                  const SizedBox(height: 20),
+                  // Widget Options
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemBackground.resolveFrom(context),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Column(
+                          children: [
+                            _buildIOSWidgetOption(
+                              icon: CupertinoIcons.chart_bar_square,
+                              iconColor: CupertinoColors.systemGrey,
+                              title: 'Sensor-Diagramm',
+                              subtitle: 'Live X/Y Datenvisualisierung',
+                              onTap: () {
+                                Navigator.pop(context);
+                                _showWidgetSizeSelector(
+                                  tabIndex: tabIndex,
+                                  widgetType: 'chart',
+                                  title: 'Sensor-Diagramm',
+                                );
+                              },
+                            ),
+                            _buildIOSWidgetOption(
+                              icon: CupertinoIcons.chart_bar_alt_fill,
+                              iconColor: CupertinoColors.systemGrey2,
+                              title: 'Statistiken',
+                              subtitle: 'Min, Max, Avg, Standardabweichung',
+                              onTap: () {
+                                Navigator.pop(context);
+                                _showWidgetSizeSelector(
+                                  tabIndex: tabIndex,
+                                  widgetType: 'statistics',
+                                  title: 'Statistiken',
+                                );
+                              },
+                            ),
+                            _buildIOSWidgetOption(
+                              icon: CupertinoIcons.speedometer,
+                              iconColor: CupertinoColors.systemGrey,
+                              title: 'Frequenz-Anzeige',
+                              subtitle: 'BLE & Regelkreis-Frequenzen',
+                              onTap: () {
+                                Navigator.pop(context);
+                                _showWidgetSizeSelector(
+                                  tabIndex: tabIndex,
+                                  widgetType: 'frequency',
+                                  title: 'Frequenzen',
+                                );
+                              },
+                            ),
+                            _buildIOSWidgetOption(
+                              icon: CupertinoIcons.gauge,
+                              iconColor: CupertinoColors.systemGrey2,
+                              title: 'Duty Cycles',
+                              subtitle: 'PWM Ausgangsleistung',
+                              onTap: () {
+                                Navigator.pop(context);
+                                _showWidgetSizeSelector(
+                                  tabIndex: tabIndex,
+                                  widgetType: 'duty_cycle',
+                                  title: 'Duty Cycles',
+                                );
+                              },
+                            ),
+                            _buildIOSWidgetOption(
+                              icon: CupertinoIcons.graph_square,
+                              iconColor: CupertinoColors.systemGrey,
+                              title: 'Mittelwert',
+                              subtitle: 'Gleitender Durchschnitt',
+                              onTap: () {
+                                Navigator.pop(context);
+                                _showWidgetSizeSelector(
+                                  tabIndex: tabIndex,
+                                  widgetType: 'average',
+                                  title: 'Mittelwert',
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
         );
       },
     );
@@ -4199,115 +4913,133 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                       ),
                     ),
                   ),
-                // Title mit Abbrechen-Hinweis
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      Text(
-                        'GRÖßE WÄHLEN',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.08,
-                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Nach unten wischen zum Abbrechen',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: CupertinoColors.tertiaryLabel.resolveFrom(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                // Size Grid
-                Expanded(
-                  child: Padding(
+                  // Title mit Abbrechen-Hinweis
+                  Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: GridView.count(
-                      crossAxisCount: 3,
-                      childAspectRatio: 1,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
+                    child: Column(
                       children: [
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.smallSquare,
-                          label: '1x1',
-                          icon: Icons.crop_square,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.smallSquare),
+                        Text(
+                          'GRÖßE WÄHLEN',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.08,
+                            color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                          ),
                         ),
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.wideRectangle,
-                          label: '2x1',
-                          icon: Icons.crop_16_9,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.wideRectangle),
-                        ),
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.extraWide,
-                          label: '3x1',
-                          icon: Icons.panorama_wide_angle,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.extraWide),
-                        ),
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.tallRectangle,
-                          label: '1x2',
-                          icon: Icons.crop_portrait,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.tallRectangle),
-                        ),
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.largeSquare,
-                          label: '2x2',
-                          icon: Icons.crop_din,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.largeSquare),
-                        ),
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.huge,
-                          label: '3x2',
-                          icon: Icons.aspect_ratio,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.huge),
-                        ),
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.extraTall,
-                          label: '1x3',
-                          icon: Icons.stay_primary_portrait,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.extraTall),
-                        ),
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.giant,
-                          label: '4x2',
-                          icon: Icons.panorama_horizontal,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.giant),
-                        ),
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.massive,
-                          label: '4x3',
-                          icon: Icons.grid_on,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.massive),
-                        ),
-                        _buildSizeOption(
-                          size: AnalysisWidgetSize.fullWidth,
-                          label: '4x4',
-                          icon: Icons.fullscreen,
-                          onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.fullWidth),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Nach unten wischen zum Abbrechen',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 20),
+                  // Size Grid
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: GridView.count(
+                        crossAxisCount: 3,
+                        childAspectRatio: 1,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        children: [
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.smallSquare,
+                            label: '1x1',
+                            icon: Icons.crop_square,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.smallSquare),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.wideRectangle,
+                            label: '2x1',
+                            icon: Icons.crop_16_9,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.wideRectangle),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.extraWide,
+                            label: '3x1',
+                            icon: Icons.panorama_wide_angle,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.extraWide),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.tallRectangle,
+                            label: '1x2',
+                            icon: Icons.crop_portrait,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.tallRectangle),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.largeSquare,
+                            label: '2x2',
+                            icon: Icons.crop_din,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.largeSquare),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.huge,
+                            label: '3x2',
+                            icon: Icons.aspect_ratio,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.huge),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.extraTall,
+                            label: '1x3',
+                            icon: Icons.stay_primary_portrait,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.extraTall),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.giant,
+                            label: '4x2',
+                            icon: Icons.panorama_horizontal,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.giant),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.massive,
+                            label: '4x3',
+                            icon: Icons.grid_on,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.massive),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.fullWidth,
+                            label: '4x4',
+                            icon: Icons.fullscreen,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.fullWidth),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.ultraWide,
+                            label: '5x3',
+                            icon: Icons.panorama,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.ultraWide),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.megaChart,
+                            label: '6x4',
+                            icon: Icons.dashboard_customize,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.megaChart),
+                          ),
+                          _buildSizeOption(
+                            size: AnalysisWidgetSize.maxChart,
+                            label: '8x6',
+                            icon: Icons.view_comfy,
+                            onTap: () => _createWidget(context, tabIndex, widgetType, title, AnalysisWidgetSize.maxChart),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ),  // Container closing
-      );    // GestureDetector closing
+          ),  // Container closing
+        );    // GestureDetector closing
       },
     );
   }
-  
+
   Widget _buildSizeOption({
     required AnalysisWidgetSize size,
     required String label,
@@ -4347,18 +5079,20 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       ),
     );
   }
-  
+
   void _createWidget(BuildContext context, int tabIndex, String widgetType, String title, AnalysisWidgetSize size) {
     Navigator.pop(context);
-    
+
     final id = DateTime.now().millisecondsSinceEpoch.toString();
     AnalysisWidgetModel widget;
-    
+
     switch (widgetType) {
       case 'chart':
         widget = ChartWidgetModel(
           id: id,
           title: title,
+          lineThickness: 2.0,
+          showTimeControls: true,
           size: size,
         );
         break;
@@ -4383,13 +5117,20 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
           size: size,
         );
         break;
+      case 'average':
+        widget = AverageWidgetModel(
+          id: id,
+          title: title,
+          size: size,
+        );
+        break;
       default:
         return;
     }
-    
+
     _addWidget(tabIndex, widget);
   }
-  
+
   void _addWidget(int tabIndex, AnalysisWidgetModel widget) {
     setState(() {
       // Finde eine freie Position für das neue Widget
@@ -4406,7 +5147,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
 
   void _showWidgetSettings(int tabIndex, int widgetIndex) {
     final widget = openTabs[tabIndex].widgets[widgetIndex];
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -4432,19 +5173,19 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                       borderRadius: BorderRadius.circular(2.5),
                     ),
                   ),
-                  
+
                   // Title
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                      '${widget.title} - Einstellungen',
+                      '${openTabs[tabIndex].widgets[widgetIndex].title} - Einstellungen',
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                  
+
                   // Settings Content
                   Expanded(
                     child: Container(
@@ -4453,10 +5194,10 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(13),
                       ),
-                      child: _buildWidgetSettingsContent(widget, tabIndex, widgetIndex, setModalState),
+                      child: _buildWidgetSettingsContent(openTabs[tabIndex].widgets[widgetIndex], tabIndex, widgetIndex, setModalState),
                     ),
                   ),
-                  
+
                   // Close Button
                   Padding(
                     padding: const EdgeInsets.all(16),
@@ -4487,11 +5228,14 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       },
     );
   }
-  
+
   Widget _buildWidgetSettingsContent(AnalysisWidgetModel widget, int tabIndex, int widgetIndex, StateSetter setModalState) {
-    switch (widget.type) {
+    // Always get the current widget from the list to ensure we have the latest state
+    final currentWidget = openTabs[tabIndex].widgets[widgetIndex];
+
+    switch (currentWidget.type) {
       case 'chart':
-        final chartModel = widget as ChartWidgetModel;
+        final chartModel = currentWidget as ChartWidgetModel;
         return ListView(
           children: [
             // Zeitkontrollen-Toggle (nur für Live-Tabs)
@@ -4510,6 +5254,12 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                         showLegend: chartModel.showLegend,
                         displayRange: chartModel.displayRange,
                         showTimeControls: value,
+                        triggerEnabled: chartModel.triggerEnabled,
+                        upperThreshold: chartModel.upperThreshold,
+                        lowerThreshold: chartModel.lowerThreshold,
+                        lineThickness: chartModel.lineThickness,
+                        size: chartModel.size,
+                        position: chartModel.position,
                       );
                     });
                     setModalState(() {});
@@ -4518,7 +5268,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               ),
               const Divider(),
             ],
-            
+
             ListTile(
               title: const Text('Gitter anzeigen'),
               trailing: Switch(
@@ -4532,6 +5282,12 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                       showLegend: chartModel.showLegend,
                       displayRange: chartModel.displayRange,
                       showTimeControls: chartModel.showTimeControls,
+                      triggerEnabled: chartModel.triggerEnabled,
+                      upperThreshold: chartModel.upperThreshold,
+                      lowerThreshold: chartModel.lowerThreshold,
+                      lineThickness: chartModel.lineThickness,
+                      size: chartModel.size,
+                      position: chartModel.position,
                     );
                   });
                   setModalState(() {});
@@ -4539,7 +5295,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
               ),
             ),
             const Divider(),
-            
+
             ListTile(
               title: const Text('Legende anzeigen'),
               trailing: Switch(
@@ -4553,15 +5309,207 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
                       showLegend: value,
                       displayRange: chartModel.displayRange,
                       showTimeControls: chartModel.showTimeControls,
+                      triggerEnabled: chartModel.triggerEnabled,
+                      upperThreshold: chartModel.upperThreshold,
+                      lowerThreshold: chartModel.lowerThreshold,
+                      lineThickness: chartModel.lineThickness,
+                      size: chartModel.size,
+                      position: chartModel.position,
                     );
                   });
                   setModalState(() {});
                 },
               ),
             ),
+            const Divider(),
+
+            ListTile(
+              title: const Text('Linienstärke'),
+              subtitle: Text('${chartModel.lineThickness.toStringAsFixed(1)} Pixel'),
+              trailing: SizedBox(
+                width: 200,
+                child: Slider(
+                  value: chartModel.lineThickness,
+                  min: 0.5,
+                  max: 5.0,
+                  divisions: 9,
+                  label: chartModel.lineThickness.toStringAsFixed(1),
+                  onChanged: (value) {
+                    setState(() {
+                      openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                        id: chartModel.id,
+                        title: chartModel.title,
+                        showGrid: chartModel.showGrid,
+                        showLegend: chartModel.showLegend,
+                        displayRange: chartModel.displayRange,
+                        showTimeControls: chartModel.showTimeControls,
+                        triggerEnabled: chartModel.triggerEnabled,
+                        upperThreshold: chartModel.upperThreshold,
+                        lowerThreshold: chartModel.lowerThreshold,
+                        lineThickness: value,
+                        size: chartModel.size,
+                        position: chartModel.position,
+                      );
+                    });
+                    setModalState(() {});
+                  },
+                ),
+              ),
+            ),
+            const Divider(),
+
+            ListTile(
+              title: const Text('Trigger-Linien aktivieren'),
+              subtitle: const Text('Zeigt obere und untere Schwellenwerte an'),
+              trailing: Switch(
+                value: chartModel.triggerEnabled,
+                onChanged: (value) {
+                  setState(() {
+                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                      id: chartModel.id,
+                      title: chartModel.title,
+                      showGrid: chartModel.showGrid,
+                      showLegend: chartModel.showLegend,
+                      displayRange: chartModel.displayRange,
+                      showTimeControls: chartModel.showTimeControls,
+                      triggerEnabled: value,
+                      upperThreshold: chartModel.upperThreshold,
+                      lowerThreshold: chartModel.lowerThreshold,
+                      lineThickness: chartModel.lineThickness,
+                      size: chartModel.size,
+                      position: chartModel.position,
+                    );
+                  });
+                  setModalState(() {});
+                },
+              ),
+            ),
+
+            if (chartModel.triggerEnabled) ...[
+              const Divider(),
+              ListTile(
+                title: const Text('Oberer Schwellenwert'),
+                subtitle: Text(chartModel.upperThreshold?.toStringAsFixed(2) ?? 'Nicht gesetzt'),
+                trailing: IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () async {
+                    final controller = TextEditingController(
+                      text: chartModel.upperThreshold?.toString() ?? '',
+                    );
+                    final result = await showDialog<double?>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Oberer Schwellenwert'),
+                        content: TextField(
+                          controller: controller,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            hintText: 'z.B. 100.0',
+                            labelText: 'Wert',
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Abbrechen'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              final value = double.tryParse(controller.text);
+                              Navigator.pop(context, value);
+                            },
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (result != null) {
+                      setState(() {
+                        openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                          id: chartModel.id,
+                          title: chartModel.title,
+                          showGrid: chartModel.showGrid,
+                          showLegend: chartModel.showLegend,
+                          displayRange: chartModel.displayRange,
+                          showTimeControls: chartModel.showTimeControls,
+                          triggerEnabled: chartModel.triggerEnabled,
+                          upperThreshold: result,
+                          lowerThreshold: chartModel.lowerThreshold,
+                          lineThickness: chartModel.lineThickness,
+                          size: chartModel.size,
+                          position: chartModel.position,
+                        );
+                      });
+                      setModalState(() {});
+                    }
+                  },
+                ),
+              ),
+
+              ListTile(
+                title: const Text('Unterer Schwellenwert'),
+                subtitle: Text(chartModel.lowerThreshold?.toStringAsFixed(2) ?? 'Nicht gesetzt'),
+                trailing: IconButton(
+                  icon: const Icon(Icons.edit),
+                  onPressed: () async {
+                    final controller = TextEditingController(
+                      text: chartModel.lowerThreshold?.toString() ?? '',
+                    );
+                    final result = await showDialog<double?>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('Unterer Schwellenwert'),
+                        content: TextField(
+                          controller: controller,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(
+                            hintText: 'z.B. 0.0',
+                            labelText: 'Wert',
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Abbrechen'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              final value = double.tryParse(controller.text);
+                              Navigator.pop(context, value);
+                            },
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (result != null) {
+                      setState(() {
+                        openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                          id: chartModel.id,
+                          title: chartModel.title,
+                          showGrid: chartModel.showGrid,
+                          showLegend: chartModel.showLegend,
+                          displayRange: chartModel.displayRange,
+                          showTimeControls: chartModel.showTimeControls,
+                          triggerEnabled: chartModel.triggerEnabled,
+                          upperThreshold: chartModel.upperThreshold,
+                          lowerThreshold: result,
+                          lineThickness: chartModel.lineThickness,
+                          size: chartModel.size,
+                          position: chartModel.position,
+                        );
+                      });
+                      setModalState(() {});
+                    }
+                  },
+                ),
+              ),
+            ],
           ],
         );
-        
+
       case 'statistics':
         return const Center(
           child: Padding(
@@ -4569,7 +5517,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             child: Text('Statistik-Einstellungen kommen bald...'),
           ),
         );
-        
+
       case 'frequency':
         return const Center(
           child: Padding(
@@ -4577,7 +5525,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             child: Text('Frequenz-Einstellungen kommen bald...'),
           ),
         );
-        
+
       case 'dutyCycle':
         return const Center(
           child: Padding(
@@ -4585,17 +5533,25 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
             child: Text('Duty Cycle-Einstellungen kommen bald...'),
           ),
         );
-        
+
+      case 'average':
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Text('Durchschnitt-Einstellungen kommen bald...'),
+          ),
+        );
+
       default:
         return const Center(
           child: Text('Unbekannter Widget-Typ'),
         );
     }
   }
-  
+
   void _showEditWorkspaceScreen() async {
     final activeTab = openTabs[activeTabIndex];
-    
+
     final List<AnalysisWidgetModel>? updatedWidgets = await Navigator.push(
       context,
       MaterialPageRoute(
@@ -4613,13 +5569,14 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
       });
     }
   }
-  
+
   List<AnalysisWidgetModel> _getAvailableWidgets() {
     // Alle verfügbaren Widget-Typen
     return [
       ChartWidgetModel(
         id: 'chart_template',
         title: 'Sensor-Diagramm',
+        lineThickness: 2.0,
       ),
       StatisticsWidgetModel(
         id: 'stats_template',
@@ -4633,6 +5590,10 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
         id: 'duty_template',
         title: 'Duty Cycles',
       ),
+      AverageWidgetModel(
+        id: 'avg_template',
+        title: 'Durchschnittswerte',
+      ),
     ];
   }
 }
@@ -4641,13 +5602,13 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> {
 class EditWorkspaceScreen extends StatefulWidget {
   final List<AnalysisWidgetModel> activeWidgets;
   final List<AnalysisWidgetModel> availableWidgets;
-  
+
   const EditWorkspaceScreen({
     Key? key,
     required this.activeWidgets,
     required this.availableWidgets,
   }) : super(key: key);
-  
+
   @override
   State<EditWorkspaceScreen> createState() => _EditWorkspaceScreenState();
 }
@@ -4655,14 +5616,14 @@ class EditWorkspaceScreen extends StatefulWidget {
 class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
   late List<AnalysisWidgetModel> activeWidgets;
   late List<AnalysisWidgetModel> availableWidgets;
-  
+
   @override
   void initState() {
     super.initState();
     activeWidgets = List.from(widget.activeWidgets);
     availableWidgets = List.from(widget.availableWidgets);
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -4778,9 +5739,9 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
                 ],
               ),
             ),
-            
+
             const SizedBox(height: 32),
-            
+
             // Verfügbare Widgets
             Expanded(
               child: Container(
@@ -4835,7 +5796,7 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
       ),
     );
   }
-  
+
   String _getWidgetDescription(String type) {
     switch (type) {
       case 'chart':
@@ -4846,20 +5807,22 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
         return 'Regelkreis- und BLE-Frequenz';
       case 'duty_cycle':
         return 'PWM Duty Cycle Werte';
+      case 'average':
+        return 'Durchschnittswerte der Messungen';
       default:
         return '';
     }
   }
-  
+
   void _addWidget(AnalysisWidgetModel template) {
     setState(() {
       // Erstelle eine neue Instanz mit eindeutiger ID
       AnalysisWidgetModel newWidget;
       final id = DateTime.now().millisecondsSinceEpoch.toString();
-      
+
       switch (template.type) {
         case 'chart':
-          newWidget = ChartWidgetModel(id: id, title: template.title);
+          newWidget = ChartWidgetModel(id: id, title: template.title, lineThickness: 2.0);
           break;
         case 'statistics':
           newWidget = StatisticsWidgetModel(id: id, title: template.title);
@@ -4870,14 +5833,17 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
         case 'duty_cycle':
           newWidget = DutyCycleWidgetModel(id: id, title: template.title);
           break;
+        case 'average':
+          newWidget = AverageWidgetModel(id: id, title: template.title);
+          break;
         default:
           return;
       }
-      
+
       activeWidgets.add(newWidget);
     });
   }
-  
+
   void _removeWidget(int index) {
     setState(() {
       activeWidgets.removeAt(index);
@@ -4939,12 +5905,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   // NEU: Kalibrierungskurven-Daten
   CalibrationCurves calibrationCurves = CalibrationCurves();
   bool isLoadingCalibCurves = false;
-  
+
   // Erweiterte Kalibrierungs-Download-Verwaltung
   CalibUiState calibUiState = CalibUiState.idle;
   double calibDownloadProgress = 0.0;
   int calibDownloadChunksReceived = 0;
-  
+
   // Mix-Matrix Auswahl-State
   String selectedMixAxis = 'X';
   String selectedMixQuadrant = 'PP';
@@ -4975,12 +5941,23 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   // Sensor-Datenerfassung
   final List<SensorReading> sensorHistory = [];
-  final int maxHistoryLength = 5000;  // Erhöht auf 5000 für längere Historie
+  final int maxHistoryLength = 50000;  // Genug für 5+ Minuten bei hoher Abtastrate
   int _displayHistoryLength = 500;     // Anzahl der angezeigten Datenpunkte
   bool isRecording = true;
-  
+
   // UI Update Timer
   Timer? _uiUpdateTimer;
+
+  // Performance-Optimierung für Sensordaten
+  final List<SensorReading> _sensorDataBuffer = [];
+  Timer? _chartUpdateTimer;
+  DateTime _lastChartUpdate = DateTime.now();
+  DateTime _lastStatisticsUpdate = DateTime.now();
+  static const int _maxBufferSize = 1; // Minimale Puffergröße - praktisch kein Puffer
+  static const int _chartUpdateIntervalMs = 4; // 250 FPS für absolute maximale Auflösung
+  
+  // Stream für Echtzeit-Daten ohne setState!
+  final StreamController<SensorReading> _realtimeDataStream = StreamController<SensorReading>.broadcast();
 
   // Statistiken
   double xMin = 0, xMax = 0, xAvg = 0, xStdDev = 0;
@@ -4992,19 +5969,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   // Stream Controller für Kalibrierungs-Updates
   final StreamController<CalibrationUpdate> _calibrationStreamController = StreamController<CalibrationUpdate>.broadcast();
-  
+
   // Cockpit-Panel für Analyse-View
   bool _showCockpitPanel = false;
 
   // NEU: Status-Panel einklappen
   bool isStatusPanelExpanded = false;
-  
+
   // NEU: Zustand für die schwimmende Navigationsleiste
   bool _isNavExpanded = true;
-  
+
   // NEU: Zustand für Widget-Touch in Analysis Tab
   bool _isAnalysisWidgetBeingTouched = false;
-  
+
   // Draggable FAB State
   Offset _fabPosition = const Offset(20, 20); // Position from bottom-right
   bool _isDragging = false;
@@ -5012,19 +5989,23 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   bool _isDockedRight = false;
   bool _isDockAnimating = false;
   double _dockProgress = 0.0;
-  
+
   // Pre-built widgets for performance
   static const _expandMoreIcon = Icon(
     Icons.expand_more,
     color: Colors.white70,
     size: 20,
   );
-  
+
   static const _appsIcon = Icon(
     Icons.apps,
     color: Colors.white,
     size: 24,
   );
+
+  // PageStorageBucket for tab persistence
+  final PageStorageBucket _pageStorageBucket = PageStorageBucket();
+
 
   @override
   void initState() {
@@ -5055,12 +6036,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     _loadPidValues(); // Load saved PID values
     _initBluetooth();
-    
-    // Starte UI Update Timer (10Hz für flüssige Updates)
-    _uiUpdateTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (mounted) {
+
+    // Entfernt: Globaler UI Update Timer wird nicht mehr benötigt
+    // Stattdessen verwenden wir gezielte Updates für spezifische Widgets
+
+    // Chart-Update Timer für periodische UI Updates
+    _chartUpdateTimer = Timer.periodic(Duration(milliseconds: 33), (timer) { // 30 FPS
+      if (mounted && _tabController.index == 2) { // Nur wenn Analyse-Tab aktiv
         setState(() {
-          // Leerer setState, um UI zu aktualisieren
+          // Trigger UI update
         });
       }
     });
@@ -5159,6 +6143,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _debounceTimer?.cancel();
     _autoScanTimer?.cancel();
     _uiUpdateTimer?.cancel();  // Stoppe UI Update Timer
+    _chartUpdateTimer?.cancel();
     scanSubscription?.cancel();
     connectionSubscription?.cancel();
     statusSubscription?.cancel();
@@ -5343,8 +6328,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             calibrationCurves.clear();
             // WICHTIG: Live-Daten nur löschen wenn gerade kalibriert wird
 
-              liveCalibrationData.clear();
-              showLiveCalibration = false;
+            liveCalibrationData.clear();
+            showLiveCalibration = false;
 
             // Wenn Kalibrierung abgeschlossen war, Daten behalten für Anzeige!
           });
@@ -5459,7 +6444,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     await Future.delayed(const Duration(milliseconds: 20));
     await sendPidCommand('kdxp=$kdX_pos');
     await Future.delayed(const Duration(milliseconds: 20));
-    
+
     // X-Achse negative Richtung
     await sendPidCommand('kpxn=$kpX_neg');
     await Future.delayed(const Duration(milliseconds: 20));
@@ -5467,7 +6452,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     await Future.delayed(const Duration(milliseconds: 20));
     await sendPidCommand('kdxn=$kdX_neg');
     await Future.delayed(const Duration(milliseconds: 20));
-    
+
     // Y-Achse positive Richtung
     await sendPidCommand('kpyp=$kpY_pos');
     await Future.delayed(const Duration(milliseconds: 20));
@@ -5475,7 +6460,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     await Future.delayed(const Duration(milliseconds: 20));
     await sendPidCommand('kdyp=$kdY_pos');
     await Future.delayed(const Duration(milliseconds: 20));
-    
+
     // Y-Achse negative Richtung
     await sendPidCommand('kpyn=$kpY_neg');
     await Future.delayed(const Duration(milliseconds: 20));
@@ -5483,7 +6468,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     await Future.delayed(const Duration(milliseconds: 20));
     await sendPidCommand('kdyn=$kdY_neg');
     await Future.delayed(const Duration(milliseconds: 20));
-    
+
     // D-Filter Zeitkonstante
     await sendPidCommand('dtc=$dFilterTimeConstantS');
   }
@@ -5503,15 +6488,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (value.length > 12) {
       // --- NEUE LOGIK FÜR CONTAINER-PAKETE ---
       final byteData = ByteData.view(Uint8List.fromList(value).buffer);
-      
+
       // Lies die Metadaten aus dem Paket-Header
       // uint8_t packet_type = byteData.getUint8(0); // Typ, falls benötigt
       int sampleCount = byteData.getUint8(1);
-      
+
       // Lese Frequenzdaten
       final double parsedLoopFreq = byteData.getUint16(2, Endian.little) / 10.0;
       final double parsedBleFreq = byteData.getUint8(4).toDouble();
-      
+
       // Wir starten das Auslesen der Samples nach dem Header (5 Bytes)
       int offset = 5;
 
@@ -5521,21 +6506,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           // Lese X und Y (jeweils 16-bit Integer) und skaliere zurück
           final double parsedX = byteData.getInt16(offset, Endian.little) / 1000.0;
           final double parsedY = byteData.getInt16(offset + 2, Endian.little) / 1000.0;
-          
+
           // Verschiebe den Offset zum nächsten Sample
           offset += 4;
-          
+
           // Füge die entpackten Daten dem Graphen hinzu
           sensorX = parsedX;
           sensorY = parsedY;
           isCalibrated = true;
-          
+
           // Aktualisiere Frequenzdaten nur beim ersten Sample jedes Pakets
           if (i == 0) {
             loopFrequency = parsedLoopFreq;
             bleFrequency = parsedBleFreq;
           }
-          
+
           final reading = SensorReading(
             timestamp: DateTime.now(), // Zeitstempel bei Empfang
             x: parsedX,
@@ -5545,6 +6530,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           );
 
           if (isRecording) {
+            // Stream für Echtzeit ohne setState!
+            _realtimeDataStream.add(reading);
+            
+            // History für normale Anzeige
             sensorHistory.add(reading);
             if (sensorHistory.length > maxHistoryLength) {
               sensorHistory.removeAt(0);
@@ -5552,8 +6541,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           }
         }
       }
-      // Nach dem Verarbeiten aller Punkte die Statistik neu berechnen
-      _calculateStatistics();
+      // Statistiken nur noch alle 500ms berechnen statt bei jedem Paket
+      final now = DateTime.now();
+      if (now.difference(_lastStatisticsUpdate).inMilliseconds > 500) {
+        _calculateStatistics();
+        _lastStatisticsUpdate = now;
+      }
 
     } else if (value.length == 12) {
       // --- ALTE LOGIK FÜR EINZELPAKETE (als Fallback) ---
@@ -5593,6 +6586,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         );
 
         if (isRecording) {
+          // Stream für Echtzeit ohne setState!
+          _realtimeDataStream.add(reading);
+          
+          // History für normale Anzeige
           sensorHistory.add(reading);
           if (sensorHistory.length > maxHistoryLength) {
             sensorHistory.removeAt(0);
@@ -5684,9 +6681,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
             switch (curve) {
               case 'x_pos':
-                // Prüfe ob PWM=0 bereits existiert (doppelte Übertragung vom ESP32)
+              // Prüfe ob PWM=0 bereits existiert (doppelte Übertragung vom ESP32)
                 bool pwm0Exists = index < liveCalibrationData.xPositiveLive.length &&
-                                  liveCalibrationData.xPositiveLive[index].pwm == 0;
+                    liveCalibrationData.xPositiveLive[index].pwm == 0;
 
                 if (index < liveCalibrationData.xPositiveLive.length) {
                   liveCalibrationData.xPositiveLive[index] = point;
@@ -5777,20 +6774,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           setState(() {
             isLoadingCalibCurves = false;
           });
-          
+
         } else if (type == 'calib_complete_ready_for_download') {
           setState(() {
             calibUiState = CalibUiState.ready_for_download;
           });
           print("Kalibrierung abgeschlossen - bereit für Download");
-          
+
         } else if (type == 'download_start') {
           // Capture metadata from download_start
           int calibSteps = data['calib_steps'] ?? 0;
           int mixGridSize = data['mix_grid_size'] ?? 0;
           double offsetX = (data['offset_x'] ?? 0.0).toDouble();
           double offsetY = (data['offset_y'] ?? 0.0).toDouble();
-          
+
           setState(() {
             calibUiState = CalibUiState.downloading;
             calibDownloadTotalChunks = data['total_chunks'] ?? 0;
@@ -5806,7 +6803,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           });
           print("Download gestartet: $calibDownloadTotalChunks Chunks erwartet");
           print("Metadata - Steps: $calibSteps, Grid: $mixGridSize, Offset: ($offsetX, $offsetY)");
-          
+
         } else if (type == 'calib_curve') {
           // Legacy single-point handler (keep for compatibility)
           int chunkIdx = data['chunk_idx'] ?? 0;
@@ -5815,43 +6812,43 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           int pwm = data['pwm'] ?? 0;
           double main = (data['main'] ?? 0.0).toDouble();
           double cross = (data['cross'] ?? 0.0).toDouble();
-          
+
           if (!downloadedCurves.containsKey(curveName)) {
             downloadedCurves[curveName] = [];
           }
-          
+
           // Ensure list is large enough
           while (downloadedCurves[curveName]!.length <= idx) {
             downloadedCurves[curveName]!.add(CalibrationPoint(pwm: 0, mainAxis: 0.0, crossAxis: 0.0));
           }
-          
+
           downloadedCurves[curveName]![idx] = CalibrationPoint(pwm: pwm, mainAxis: main, crossAxis: 0.0);
-          
+
           setState(() {
             calibDownloadChunksReceived = chunkIdx + 1;  // +1 because chunkIdx is 0-based
-            calibDownloadProgress = calibDownloadTotalChunks > 0 
-                ? (chunkIdx + 1) / calibDownloadTotalChunks 
+            calibDownloadProgress = calibDownloadTotalChunks > 0
+                ? (chunkIdx + 1) / calibDownloadTotalChunks
                 : 0.0;
           });
-          
+
         } else if (type == 'calib_curve_chunk') {
           // New chunk handler for calibration curves
           int chunkIdx = data['chunk_idx'] ?? 0;
           String curveName = data['curve'] ?? '';
           int startIdx = data['start_idx'] ?? 0;
           List<dynamic> points = data['points'] ?? [];
-          
+
           print('>>> [APP-LOG] Empfangen: Chunk $chunkIdx für Kurve "$curveName" mit ${points.length} Punkten.');
-          
+
           if (!downloadedCurves.containsKey(curveName)) {
             downloadedCurves[curveName] = [];
           }
-          
+
           // Ensure list is large enough
           while (downloadedCurves[curveName]!.length < startIdx + points.length) {
             downloadedCurves[curveName]!.add(CalibrationPoint(pwm: 0, mainAxis: 0.0, crossAxis: 0.0));
           }
-          
+
           // Process all points in the chunk
           for (int i = 0; i < points.length; i++) {
             var point = points[i];
@@ -5860,14 +6857,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             double cross = (point['cross'] ?? 0.0).toDouble();
             downloadedCurves[curveName]![startIdx + i] = CalibrationPoint(pwm: pwm, mainAxis: main, crossAxis: cross);
           }
-          
+
           setState(() {
             calibDownloadChunksReceived = chunkIdx + 1;  // +1 because chunkIdx is 0-based
-            calibDownloadProgress = calibDownloadTotalChunks > 0 
-                ? (chunkIdx + 1) / calibDownloadTotalChunks 
+            calibDownloadProgress = calibDownloadTotalChunks > 0
+                ? (chunkIdx + 1) / calibDownloadTotalChunks
                 : 0.0;
           });
-          
+
         } else if (type == 'mix_grid') {
           // Legacy single-point handler (keep for compatibility)
           int chunkIdx = data['chunk_idx'] ?? 0;
@@ -5876,35 +6873,35 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           int i = data['i'] ?? 0;
           int j = data['j'] ?? 0;
           double value = (data['value'] ?? 0.0).toDouble();
-          
+
           String key = '${axis}_$quadrant';
           if (!downloadedMixGrids.containsKey(key)) {
             int gridSize = downloadMetadata['mix_grid_size'] ?? 21;
             downloadedMixGrids[key] = List.generate(gridSize, (_) => List.filled(gridSize, 0.0));
           }
-          
+
           downloadedMixGrids[key]![i][j] = value;
-          
+
           setState(() {
             calibDownloadChunksReceived = chunkIdx + 1;  // +1 because chunkIdx is 0-based
-            calibDownloadProgress = calibDownloadTotalChunks > 0 
-                ? (chunkIdx + 1) / calibDownloadTotalChunks 
+            calibDownloadProgress = calibDownloadTotalChunks > 0
+                ? (chunkIdx + 1) / calibDownloadTotalChunks
                 : 0.0;
           });
-          
+
         } else if (type == 'mix_grid_chunk') {
           // New chunk handler for mix grid data
           int chunkIdx = data['chunk_idx'] ?? 0;
           String axis = data['axis'] ?? '';
           String quadrant = data['quadrant'] ?? '';
           List<dynamic> points = data['points'] ?? [];
-          
+
           String key = '${axis}_$quadrant';
           if (!downloadedMixGrids.containsKey(key)) {
             int gridSize = downloadMetadata['mix_grid_size'] ?? 21;
             downloadedMixGrids[key] = List.generate(gridSize, (_) => List.filled(gridSize, 0.0));
           }
-          
+
           // Process all points in the chunk
           for (var point in points) {
             int i = point['i'] ?? 0;
@@ -5912,18 +6909,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             double value = (point['v'] ?? 0.0).toDouble();
             downloadedMixGrids[key]![i][j] = value;
           }
-          
+
           setState(() {
             calibDownloadChunksReceived = chunkIdx + 1;  // +1 because chunkIdx is 0-based
-            calibDownloadProgress = calibDownloadTotalChunks > 0 
-                ? (chunkIdx + 1) / calibDownloadTotalChunks 
+            calibDownloadProgress = calibDownloadTotalChunks > 0
+                ? (chunkIdx + 1) / calibDownloadTotalChunks
                 : 0.0;
           });
-          
+
         } else if (type == 'download_complete') {
           // download_complete is also a chunk!
           calibDownloadChunksReceived++;
-          
+
           int totalSentByEsp = data['total_sent'] ?? 0;
           int expectedByEsp = data['expected'] ?? 0;
 
@@ -5951,13 +6948,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               });
             }
           }
-          
+
           // Debug logging for calibration data after download
           print("=== CALIBRATION DATA DEBUG INFO ===");
           print("Download complete. Debugging calibration data state:");
           print("- Total chunks received: $calibDownloadChunksReceived / $calibDownloadTotalChunks");
           print("- Downloaded curves count: ${downloadedCurves.length}");
-          
+
           // Log metadata if available
           if (downloadMetadata.isNotEmpty) {
             print("- Calibration steps: ${downloadMetadata['calib_steps']}");
@@ -5965,7 +6962,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             print("- Basis offset X: ${downloadMetadata['offset_x']}");
             print("- Basis offset Y: ${downloadMetadata['offset_y']}");
           }
-          
+
           // Log details about each downloaded curve
           downloadedCurves.forEach((curveName, points) {
             print("- Curve '$curveName': ${points.length} points");
@@ -5982,7 +6979,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               }
             }
           });
-          
+
           // Log details about downloaded mix grids
           downloadedMixGrids.forEach((gridName, gridData) {
             print("- Mix Grid '$gridName': ${gridData.length} rows");
@@ -5992,16 +6989,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             }
           });
           print("=== END CALIBRATION DATA DEBUG INFO ===");
-          
+
           // Re-enable status notifications
           _reenableStatusNotifications();
-          
+
         } else if (type == 'download_aborted') {
           setState(() {
             calibUiState = CalibUiState.download_aborted;
           });
           print("Download abgebrochen");
-          
+
           // Re-enable status notifications
           _reenableStatusNotifications();
         }
@@ -6110,7 +7107,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     // Detrending: Entferne linearen Trend für genauere Rauschmessung
     List<double> detrended = _detrendData(values);
-    
+
     // Berechne RMS des detrendierten Signals
     double sumSquares = 0;
     for (double val in detrended) {
@@ -6123,7 +7120,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (values.length > 100) {
       return _filterHighFrequencyNoise(values, rms);
     }
-    
+
     return rms;
   }
 
@@ -6140,24 +7137,24 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   List<double> _detrendData(List<double> values) {
     int n = values.length;
     double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-    
+
     for (int i = 0; i < n; i++) {
       sumX += i;
       sumY += values[i];
       sumXY += i * values[i];
       sumX2 += i * i;
     }
-    
+
     // Lineare Regression: y = slope * x + intercept
     double slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
     double intercept = (sumY - slope * sumX) / n;
-    
+
     // Trend subtrahieren
     List<double> detrended = [];
     for (int i = 0; i < n; i++) {
       detrended.add(values[i] - (slope * i + intercept));
     }
-    
+
     return detrended;
   }
 
@@ -6166,16 +7163,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     // Differenzen-Methode für Hochfrequenz-Komponenten
     double diffSum = 0;
     int count = 0;
-    
+
     for (int i = 1; i < values.length; i++) {
       double diff = values[i] - values[i-1];
       diffSum += diff * diff;
       count++;
     }
-    
+
     // Skalierung für 600 Hz Abtastrate
     double highFreqRMS = math.sqrt(diffSum / count) / math.sqrt(2);
-    
+
     // Kombiniere mit Basis-RMS, gewichte Hochfrequenz stärker
     return math.sqrt(baseRMS * baseRMS * 0.3 + highFreqRMS * highFreqRMS * 0.7);
   }
@@ -6271,21 +7268,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       showError("Nicht verbunden");
       return;
     }
-    
+
     setState(() {
       calibUiState = CalibUiState.downloading;
       calibDownloadProgress = 0.0;
       calibDownloadChunksReceived = 0;
       calibDownloadTotalChunks = 0;
     });
-    
+
     // Disable status notifications during download
     await statusDataChar?.setNotifyValue(false);
-    
+
     // Send download command
     await sendCalibrationCommand('GET_ALL_DATA');
   }
-  
+
   Future<void> _reenableStatusNotifications() async {
     try {
       await statusDataChar?.setNotifyValue(true);
@@ -6322,25 +7319,25 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   void exportSensorDataToCSV() async {
     if (sensorHistory.isEmpty) {
       showError('Keine Daten zum Exportieren vorhanden');
       return;
     }
-    
+
     // Erstelle CSV-Daten
     String csv = 'Timestamp,X (mT),Y (mT),Duty1,Duty2\n';
     for (var reading in sensorHistory) {
       csv += '${reading.timestamp.toIso8601String()},${reading.x},${reading.y},${reading.duty1},${reading.duty2}\n';
     }
-    
+
     // Speichere in temporäre Datei
     final directory = await getApplicationDocumentsDirectory();
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
     final file = File('${directory.path}/maglev_sensor_data_$timestamp.csv');
     await file.writeAsString(csv);
-    
+
     // Teile die Datei
     Share.shareXFiles([XFile(file.path)], text: 'MagLev Sensor Data Export');
     showSuccess('Daten wurden exportiert');
@@ -6694,7 +7691,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       kpX_neg = kpx;
       kiX_neg = kix;
       kdX_neg = kdx;
-      
+
       kpY_pos = kpy;
       kiY_pos = kiy;
       kdY_pos = kdy;
@@ -6709,7 +7706,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       kpXNegController.text = kpX_neg.toStringAsFixed(2);
       kiXNegController.text = kiX_neg.toStringAsFixed(2);
       kdXNegController.text = kdX_neg.toStringAsFixed(3);
-      
+
       kpYPosController.text = kpY_pos.toStringAsFixed(2);
       kiYPosController.text = kiY_pos.toStringAsFixed(2);
       kdYPosController.text = kdY_pos.toStringAsFixed(3);
@@ -7195,7 +8192,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             child: _buildDualAxisChart(),
           ),
         ),
-        
+
         // Zeitfenster-Steuerung am unteren Rand
         Positioned(
           bottom: 24,
@@ -7205,7 +8202,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             child: _buildTimeWindowSelector(),
           ),
         ),
-        
+
         // FloatingActionButton für Cockpit-Panel
         Positioned(
           right: 24,
@@ -7223,7 +8220,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
           ),
         ),
-        
+
         // Seitliches Cockpit-Panel mit Animation
         AnimatedPositioned(
           duration: const Duration(milliseconds: 300),
@@ -7265,7 +8262,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   // Neue Widget-Methoden für das Analyse-Cockpit
   Widget _buildTimeWindowSelector() {
     return Container(
@@ -7292,7 +8289,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   Widget _buildTimeButton(String label, int value) {
     final isSelected = _displayHistoryLength == value;
     return GestureDetector(
@@ -7318,7 +8315,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   Widget _buildCockpitPanel() {
     return ClipRRect(
       borderRadius: const BorderRadius.only(
@@ -7390,7 +8387,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   Widget _buildLiveValuesWidget() {
     return Container(
       decoration: BoxDecoration(
@@ -7472,7 +8469,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   Widget _buildControlWidget() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -7529,7 +8526,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ],
     );
   }
-  
+
   Widget _buildFilterFrequencyWidget() {
     return GestureDetector(
       onTap: showFilterDialog,
@@ -7620,7 +8617,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   Widget _buildDetailStatisticsWidget() {
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -7650,12 +8647,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
           subtitle: sensorHistory.length > 10
               ? Text(
-                  'RMS: X=${(noiseX * 1000).toStringAsFixed(1)} µT, Y=${(noiseY * 1000).toStringAsFixed(1)} µT',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                )
+            'RMS: X=${(noiseX * 1000).toStringAsFixed(1)} µT, Y=${(noiseY * 1000).toStringAsFixed(1)} µT',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+            ),
+          )
               : null,
           initiallyExpanded: false,
           children: [
@@ -7751,7 +8748,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   Widget _buildNoiseStatCard(String label, String value, Color color, String quality) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -7790,7 +8787,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   String _getNoiseQuality(double noiseMT) {
     double noiseUT = noiseMT * 1000;
     if (noiseUT < 10) {
@@ -7805,7 +8802,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       return 'Verbesserung nötig';
     }
   }
-  
+
   Widget _buildStatRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -7823,13 +8820,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Color _getNoiseColor(double noiseMT) {
     // Umrechnung in Mikrotesla für bessere Lesbarkeit
     double noiseUT = noiseMT * 1000;
-    
+
     // Bewertung nach TMAG5273 Datenblatt:
     // - Typisch: 170 µG = 17 µT RMS bei 32x Averaging
     // - Gut: < 30 µT (grün)
     // - Akzeptabel: 30-100 µT (gelb/orange)
     // - Schlecht: > 100 µT (rot)
-    
+
     if (noiseUT < 30) {
       return Colors.green;  // Sehr gut
     } else if (noiseUT < 50) {
@@ -7852,7 +8849,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   // Qualitätsbewertung des Rauschens
   String _getNoiseQualityText(double noiseX, double noiseY) {
     double avgNoiseUT = (noiseX + noiseY) * 500;  // Durchschnitt in µT
-    
+
     if (avgNoiseUT < 20) {
       return 'Exzellent';
     } else if (avgNoiseUT < 40) {
@@ -7869,7 +8866,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Widget _buildDualAxisChart({List<SensorReading>? data}) {
     // Use provided data or fall back to sensorHistory
     final dataSource = data ?? sensorHistory;
-    
+
     if (dataSource.isEmpty) {
       return const Center(
         child: Text(
@@ -7969,31 +8966,31 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         borderData: FlBorderData(
           show: false, // Kein Rahmen
         ),
-              lineBarsData: [
-                LineChartBarData(
-                  spots: displayData.asMap().entries.map((entry) => FlSpot(
-                    entry.key.toDouble(),
-                    entry.value.x,
-                  )).toList(),
-                  isCurved: false,
-                  color: Colors.blue,
-                  barWidth: 2,
-                  isStrokeCapRound: true,
-                  dotData: FlDotData(show: false),
-                  belowBarData: BarAreaData(show: false),
-                ),
-                LineChartBarData(
-                  spots: displayData.asMap().entries.map((entry) => FlSpot(
-                    entry.key.toDouble(),
-                    entry.value.y,
-                  )).toList(),
-                  isCurved: false,
-                  color: Colors.green,
-                  barWidth: 2,
-                  isStrokeCapRound: true,
-                  dotData: FlDotData(show: false),
-                  belowBarData: BarAreaData(show: false),
-                ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: displayData.asMap().entries.map((entry) => FlSpot(
+              entry.key.toDouble(),
+              entry.value.x,
+            )).toList(),
+            isCurved: false,
+            color: Colors.blue,
+            barWidth: 2,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+          LineChartBarData(
+            spots: displayData.asMap().entries.map((entry) => FlSpot(
+              entry.key.toDouble(),
+              entry.value.y,
+            )).toList(),
+            isCurved: false,
+            color: Colors.green,
+            barWidth: 2,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
         ],
         lineTouchData: const LineTouchData(
           enabled: false,
@@ -8012,54 +9009,54 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         minY: 0,
         maxY: 1023,
         gridData: FlGridData(
-                show: true,
-                drawVerticalLine: true,
-                horizontalInterval: 100,
-                verticalInterval: sensorHistory.length > 100 ? 20 : 10,
-              ),
-              titlesData: FlTitlesData(
-                show: true,
-                rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 30,
-                    interval: sensorHistory.length > 100 ? sensorHistory.length / 5 : 20,
-                  ),
-                ),
-                leftTitles: AxisTitles(
-                  axisNameWidget: const Text('Duty Cycle', style: TextStyle(fontSize: 12)),
-                  axisNameSize: 20,
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 50,
-                    interval: 200,
-                  ),
-                ),
-              ),
-              borderData: FlBorderData(show: true),
-              lineBarsData: [
-                LineChartBarData(
-                  spots: sensorHistory.asMap().entries.map((entry) => FlSpot(
-                    entry.key.toDouble(),
-                    entry.value.duty1.toDouble(),
-                  )).toList(),
-                  isCurved: false,
-                  color: Colors.orange,
-                  barWidth: 2,
-                  dotData: FlDotData(show: false),
-                ),
-                LineChartBarData(
-                  spots: sensorHistory.asMap().entries.map((entry) => FlSpot(
-                    entry.key.toDouble(),
-                    entry.value.duty2.toDouble(),
-                  )).toList(),
-                  isCurved: false,
-                  color: Colors.purple,
-                  barWidth: 2,
-                  dotData: FlDotData(show: false),
-                ),
+          show: true,
+          drawVerticalLine: true,
+          horizontalInterval: 100,
+          verticalInterval: sensorHistory.length > 100 ? 20 : 10,
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              interval: sensorHistory.length > 100 ? sensorHistory.length / 5 : 20,
+            ),
+          ),
+          leftTitles: AxisTitles(
+            axisNameWidget: const Text('Duty Cycle', style: TextStyle(fontSize: 12)),
+            axisNameSize: 20,
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 50,
+              interval: 200,
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: true),
+        lineBarsData: [
+          LineChartBarData(
+            spots: sensorHistory.asMap().entries.map((entry) => FlSpot(
+              entry.key.toDouble(),
+              entry.value.duty1.toDouble(),
+            )).toList(),
+            isCurved: false,
+            color: Colors.orange,
+            barWidth: 2,
+            dotData: FlDotData(show: false),
+          ),
+          LineChartBarData(
+            spots: sensorHistory.asMap().entries.map((entry) => FlSpot(
+              entry.key.toDouble(),
+              entry.value.duty2.toDouble(),
+            )).toList(),
+            isCurved: false,
+            color: Colors.purple,
+            barWidth: 2,
+            dotData: FlDotData(show: false),
+          ),
         ],
         lineTouchData: const LineTouchData(
           enabled: false,
@@ -8402,7 +9399,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           lineBarsData: [
             LineChartBarData(
               spots: xPositiveSpots, // Verwende die sortierte Liste
-              isCurved: true,
+              isCurved: false,
               color: Colors.blue,
               barWidth: 2,
               dotData: FlDotData(show: false),
@@ -8410,7 +9407,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
             LineChartBarData(
               spots: xNegativeSpots, // Verwende die sortierte Liste
-              isCurved: true,
+              isCurved: false,
               color: Colors.blue.shade300,
               barWidth: 2,
               dotData: FlDotData(show: false),
@@ -8419,7 +9416,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
             LineChartBarData(
               spots: yPositiveSpots, // Verwende die sortierte Liste
-              isCurved: true,
+              isCurved: false,
               color: Colors.green,
               barWidth: 2,
               dotData: FlDotData(show: false),
@@ -8427,7 +9424,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
             LineChartBarData(
               spots: yNegativeSpots, // Verwende die sortierte Liste
-              isCurved: true,
+              isCurved: false,
               color: Colors.green.shade300,
               barWidth: 2,
               dotData: FlDotData(show: false),
@@ -8713,7 +9710,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
                 return spots;
               }(),
-              isCurved: true,
+              isCurved: false,
               color: Colors.blue,
               barWidth: 3,
               dotData: FlDotData(
@@ -8741,7 +9738,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 // Keine künstlichen Punkte hinzufügen - verwende nur echte ESP32-Daten
                 return spots;
               }(),
-              isCurved: true,
+              isCurved: false,
               color: Colors.blue.shade300,
               barWidth: 3,
               dotData: FlDotData(
@@ -8770,7 +9767,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 // Keine künstlichen Punkte hinzufügen - verwende nur echte ESP32-Daten
                 return spots;
               }(),
-              isCurved: true,
+              isCurved: false,
               color: Colors.green,
               barWidth: 3,
               dotData: FlDotData(
@@ -8798,7 +9795,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 // Keine künstlichen Punkte hinzufügen - verwende nur echte ESP32-Daten
                 return spots;
               }(),
-              isCurved: true,
+              isCurved: false,
               color: Colors.green.shade300,
               barWidth: 3,
               dotData: FlDotData(
@@ -9039,7 +10036,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     const SizedBox(height: 8),
                     Text(
                       '${(calibDownloadProgress * 100).toStringAsFixed(1)}% - '
-                      '$calibDownloadChunksReceived / $calibDownloadTotalChunks Pakete',
+                          '$calibDownloadChunksReceived / $calibDownloadTotalChunks Pakete',
                       style: const TextStyle(fontSize: 14, color: Colors.grey),
                     ),
                   ],
@@ -9047,7 +10044,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ),
               const SizedBox(height: 24),
             ],
-            
+
             // Heruntergeladene Kalibrierungsdaten anzeigen
             if (calibUiState == CalibUiState.download_complete && downloadedCurves.isNotEmpty) ...[
               SizedBox(
@@ -9116,45 +10113,49 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return Stack(
       children: [
         // Die Hauptansicht mit den Tabs
-        TabBarView(
-          // Deaktiviere das Wischen, wenn die Navigationsleiste eingeklappt ist ODER wenn ein Widget berührt wird
-          physics: (_isNavExpanded && !_isAnalysisWidgetBeingTouched)
-              ? const AlwaysScrollableScrollPhysics()
-              : const NeverScrollableScrollPhysics(),
-          controller: _tabController,
-          children: [
-            // PID Tuning Tab (bestehender Inhalt wird in eine neue Methode ausgelagert)
-            _buildPidTuningTab(),
-            // Sensor-Analyse Tab
-            AnalysisWorkspacePage(
-              sensorHistory: sensorHistory,
-              isRecording: isRecording,
-              onRecordingChanged: (value) {
-                setState(() {
-                  isRecording = value;
-                });
-              },
-              displayHistoryLength: _displayHistoryLength,
-              onDisplayHistoryLengthChanged: (value) {
-                setState(() {
-                  _displayHistoryLength = value;
-                });
-              },
-              onExportToCSV: () => exportSensorDataToCSV(),
-              onClearHistory: () {
-                setState(() {
-                  sensorHistory.clear();
-                });
-              },
-              onWidgetTouchChanged: (isTouched) {
-                setState(() {
-                  _isAnalysisWidgetBeingTouched = isTouched;
-                });
-              },
-            ),
-            // Kalibrierungs-Tab
-            buildCalibrationView(),
-          ],
+        PageStorage(
+          bucket: _pageStorageBucket,
+          child: TabBarView(
+            // Deaktiviere das Wischen, wenn die Navigationsleiste eingeklappt ist ODER wenn ein Widget berührt wird
+            physics: (_isNavExpanded && !_isAnalysisWidgetBeingTouched)
+                ? const AlwaysScrollableScrollPhysics()
+                : const NeverScrollableScrollPhysics(),
+            controller: _tabController,
+            children: [
+              // PID Tuning Tab (bestehender Inhalt wird in eine neue Methode ausgelagert)
+              _buildPidTuningTab(),
+              // Sensor-Analyse Tab
+              AnalysisWorkspacePage(
+                key: const PageStorageKey('analysis_workspace'), // Add key for state persistence
+                sensorHistory: sensorHistory,
+                isRecording: isRecording,
+                onRecordingChanged: (value) {
+                  setState(() {
+                    isRecording = value;
+                  });
+                },
+                displayHistoryLength: _displayHistoryLength,
+                onDisplayHistoryLengthChanged: (value) {
+                  setState(() {
+                    _displayHistoryLength = value;
+                  });
+                },
+                onExportToCSV: () => exportSensorDataToCSV(),
+                onClearHistory: () {
+                  setState(() {
+                    sensorHistory.clear();
+                  });
+                },
+                onWidgetTouchChanged: (isTouched) {
+                  setState(() {
+                    _isAnalysisWidgetBeingTouched = isTouched;
+                  });
+                },
+              ),
+              // Kalibrierungs-Tab
+              buildCalibrationView(),
+            ],
+          ),
         ),
         // Pre-render all button states invisibly
         Offstage(
@@ -9175,552 +10176,552 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ],
     );
   }
-  
+
   Widget _buildPidTuningTab() {
     // Dieser Code war vorher in der buildTuningView und wird nun hier gekapselt
     return Column(
       children: [
         // NEU: Einklappbarer Status-Bereich
         ExpansionTile(
-                    title: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.bluetooth_connected, color: Colors.green, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'ESP32 Verbunden',
-                            style: TextStyle(
-                              color: Colors.green.shade700,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              'v$espFirmwareVersion',
-                              style: const TextStyle(fontSize: 11, color: Colors.grey),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    initiallyExpanded: isStatusPanelExpanded,
-                    onExpansionChanged: (expanded) {
-                      setState(() {
-                        isStatusPanelExpanded = expanded;
-                      });
-                    },
+          title: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.bluetooth_connected, color: Colors.green, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'ESP32 Verbunden',
+                  style: TextStyle(
+                    color: Colors.green.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'v$espFirmwareVersion',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          initiallyExpanded: isStatusPanelExpanded,
+          onExpansionChanged: (expanded) {
+            setState(() {
+              isStatusPanelExpanded = expanded;
+            });
+          },
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                border: Border(
+                  top: BorderSide(color: Colors.grey.shade300),
+                ),
+              ),
+              child: Column(
+                children: [
+                  // Live Sensor-Daten
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          border: Border(
-                            top: BorderSide(color: Colors.grey.shade300),
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            // Live Sensor-Daten
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                              children: [
-                                _buildStatusIndicator('X-Sensor', '${sensorX.toStringAsFixed(2)} mT', Colors.blue),
-                                _buildStatusIndicator('Y-Sensor', '${sensorY.toStringAsFixed(2)} mT', Colors.green),
-                                _buildStatusIndicator('Duty 1', duty1.toString(), Colors.orange),
-                                _buildStatusIndicator('Duty 2', duty2.toString(), Colors.purple),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-
-                            // Frequenz und Filter
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: loopFrequency < 850 ? Colors.red.shade50 : Colors.green.shade50,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: loopFrequency < 850 ? Colors.red.shade300 : Colors.green.shade300,
-                                ),
-                              ),
-                              child: Column(
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.speed,
-                                            color: loopFrequency < 850 ? Colors.red : Colors.green,
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                'Regelkreis-Frequenz',
-                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                              ),
-                                              Text(
-                                                '${loopFrequency.toStringAsFixed(1)} Hz',
-                                                style: TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: loopFrequency < 850 ? Colors.red : Colors.green,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      Container(
-                                        width: 1,
-                                        height: 40,
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.bluetooth, color: Colors.blue, size: 20),
-                                          const SizedBox(width: 8),
-                                          Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                'BLE-Datenrate',
-                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                              ),
-                                              Text(
-                                                '${bleFrequency.toStringAsFixed(0)} Hz',
-                                                style: TextStyle(
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: bleFrequency < 100 ? Colors.orange : Colors.blue,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      Container(
-                                        width: 1,
-                                        height: 40,
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.filter_alt, color: Colors.blue, size: 20),
-                                          const SizedBox(width: 8),
-                                          Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                'Aktiver Filter',
-                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                              ),
-                                              Text(
-                                                _getFilterName(currentFilter),
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.blue,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  if (loopFrequency > 0 && loopFrequency < 850) ...[
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: const [
-                                        Icon(Icons.warning, color: Colors.orange, size: 16),
-                                        SizedBox(width: 4),
-                                        Text(
-                                          'Frequenz unter Zielwert (900 Hz)',
-                                          style: TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.bold),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-
-                            // Buttons
-                            Wrap(
-                              alignment: WrapAlignment.spaceEvenly, // Behält eine ähnliche Verteilung bei
-                              spacing: 8.0, // Horizontaler Abstand zwischen den Buttons
-                              runSpacing: 4.0, // Vertikaler Abstand, wenn Buttons umbrechen
-                              children: [
-                                ElevatedButton.icon(
-                                  onPressed: showPresetDialog,
-                                  icon: const Icon(Icons.settings_suggest, size: 20),
-                                  label: const Text('PID Presets'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.blue,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Ggf. Padding beibehalten oder anpassen
-                                  ),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: showFilterDialog,
-                                  icon: const Icon(Icons.filter_alt, size: 20),
-                                  label: const Text('Sensor Filter'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.purple,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Ggf. Padding beibehalten oder anpassen
-                                  ),
-                                ),
-                                if (isCalibrated == false)
-                                  Padding( // Optional: Padding um den IconButton für konsistenten Abstand
-                                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                                    child: IconButton(
-                                      onPressed: () {
-                                        _tabController.animateTo(2);
-                                      },
-                                      icon: const Icon(Icons.warning, color: Colors.orange),
-                                      tooltip: 'Kalibrierung fehlt!',
-                                    ),
-                                  ),
-                                ElevatedButton.icon(
-                                  onPressed: disconnect,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Ggf. Padding beibehalten oder anpassen
-                                  ),
-                                  icon: const Icon(Icons.close, size: 18),
-                                  label: const Text('Trennen'),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+                      _buildStatusIndicator('X-Sensor', '${sensorX.toStringAsFixed(2)} mT', Colors.blue),
+                      _buildStatusIndicator('Y-Sensor', '${sensorY.toStringAsFixed(2)} mT', Colors.green),
+                      _buildStatusIndicator('Duty 1', duty1.toString(), Colors.orange),
+                      _buildStatusIndicator('Duty 2', duty2.toString(), Colors.purple),
                     ],
                   ),
+                  const SizedBox(height: 12),
 
-                  Expanded(
-                    child: ListView(
+                  // Frequenz und Filter
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: loopFrequency < 850 ? Colors.red.shade50 : Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: loopFrequency < 850 ? Colors.red.shade300 : Colors.green.shade300,
+                      ),
+                    ),
+                    child: Column(
                       children: [
-                        // X-ACHSE QUADRANTEN-REGLER
-                        ExpansionTile(
-                          title: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: const Text(
-                              'X-Achse Regler (Vier-Quadranten)',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
-                            ),
-                          ),
-                          backgroundColor: Colors.blue.shade50,
-                          collapsedBackgroundColor: Colors.blue.shade50,
-                          initiallyExpanded: true,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            // X-Achse Positive Richtung
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.speed,
+                                  color: loopFrequency < 850 ? Colors.red : Colors.green,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Regelkreis-Frequenz',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      '${loopFrequency.toStringAsFixed(1)} Hz',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: loopFrequency < 850 ? Colors.red : Colors.green,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                             Container(
-                              padding: const EdgeInsets.all(12),
-                              color: Colors.blue.shade100,
-                              child: const Text(
-                                'X+ (Positive Richtung)',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                              ),
+                              width: 1,
+                              height: 40,
+                              color: Colors.grey.shade300,
                             ),
-                            buildImprovedPidControl(
-                              label: 'Kp X+ (Proportional)',
-                              param: 'kpxp',
-                              value: kpX_pos,
-                              min: 20,
-                              max: 200,
-                              smallStep: 0.05,
-                              largeStep: 1,
-                              controller: kpXPosController,
-                              onChanged: (value) {
-                                setState(() => kpX_pos = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kpxp=$value');
-                              },
+                            Row(
+                              children: [
+                                const Icon(Icons.bluetooth, color: Colors.blue, size: 20),
+                                const SizedBox(width: 8),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'BLE-Datenrate',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      '${bleFrequency.toStringAsFixed(0)} Hz',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: bleFrequency < 100 ? Colors.orange : Colors.blue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                            buildImprovedPidControl(
-                              label: 'Ki X+ (Integral)',
-                              param: 'kixp',
-                              value: kiX_pos,
-                              min: 0,
-                              max: 100,
-                              smallStep: 0.1,
-                              largeStep: 1,
-                              controller: kiXPosController,
-                              onChanged: (value) {
-                                setState(() => kiX_pos = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kixp=$value');
-                              },
-                            ),
-                            buildImprovedPidControl(
-                              label: 'Kd X+ (Differential)',
-                              param: 'kdxp',
-                              value: kdX_pos,
-                              min: 0,
-                              max: 10,
-                              smallStep: 0.001,
-                              largeStep: 0.01,
-                              controller: kdXPosController,
-                              onChanged: (value) {
-                                setState(() => kdX_pos = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kdxp=$value');
-                              },
-                            ),
-                            
-                            // X-Achse Negative Richtung
                             Container(
-                              padding: const EdgeInsets.all(12),
-                              color: Colors.blue.shade100,
-                              child: const Text(
-                                'X- (Negative Richtung)',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                              ),
+                              width: 1,
+                              height: 40,
+                              color: Colors.grey.shade300,
                             ),
-                            buildImprovedPidControl(
-                              label: 'Kp X- (Proportional)',
-                              param: 'kpxn',
-                              value: kpX_neg,
-                              min: 20,
-                              max: 200,
-                              smallStep: 0.05,
-                              largeStep: 1,
-                              controller: kpXNegController,
-                              onChanged: (value) {
-                                setState(() => kpX_neg = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kpxn=$value');
-                              },
-                            ),
-                            buildImprovedPidControl(
-                              label: 'Ki X- (Integral)',
-                              param: 'kixn',
-                              value: kiX_neg,
-                              min: 0,
-                              max: 100,
-                              smallStep: 0.1,
-                              largeStep: 1,
-                              controller: kiXNegController,
-                              onChanged: (value) {
-                                setState(() => kiX_neg = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kixn=$value');
-                              },
-                            ),
-                            buildImprovedPidControl(
-                              label: 'Kd X- (Differential)',
-                              param: 'kdxn',
-                              value: kdX_neg,
-                              min: 0,
-                              max: 10,
-                              smallStep: 0.001,
-                              largeStep: 0.01,
-                              controller: kdXNegController,
-                              onChanged: (value) {
-                                setState(() => kdX_neg = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kdxn=$value');
-                              },
+                            Row(
+                              children: [
+                                const Icon(Icons.filter_alt, color: Colors.blue, size: 20),
+                                const SizedBox(width: 8),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Aktiver Filter',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      _getFilterName(currentFilter),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                        
-                        const SizedBox(height: 8),
-                        
-                        // Y-ACHSE QUADRANTEN-REGLER
-                        ExpansionTile(
-                          title: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: const Text(
-                              'Y-Achse Regler (Vier-Quadranten)',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
-                            ),
-                          ),
-                          backgroundColor: Colors.green.shade50,
-                          collapsedBackgroundColor: Colors.green.shade50,
-                          initiallyExpanded: true,
-                          children: [
-                            // Y-Achse Positive Richtung
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              color: Colors.green.shade100,
-                              child: const Text(
-                                'Y+ (Positive Richtung)',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        if (loopFrequency > 0 && loopFrequency < 850) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Icon(Icons.warning, color: Colors.orange, size: 16),
+                              SizedBox(width: 4),
+                              Text(
+                                'Frequenz unter Zielwert (900 Hz)',
+                                style: TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.bold),
                               ),
-                            ),
-                            buildImprovedPidControl(
-                              label: 'Kp Y+ (Proportional)',
-                              param: 'kpyp',
-                              value: kpY_pos,
-                              min: 20,
-                              max: 200,
-                              smallStep: 0.05,
-                              largeStep: 1,
-                              controller: kpYPosController,
-                              onChanged: (value) {
-                                setState(() => kpY_pos = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kpyp=$value');
-                              },
-                            ),
-                            buildImprovedPidControl(
-                              label: 'Ki Y+ (Integral)',
-                              param: 'kiyp',
-                              value: kiY_pos,
-                              min: 0,
-                              max: 100,
-                              smallStep: 0.1,
-                              largeStep: 1,
-                              controller: kiYPosController,
-                              onChanged: (value) {
-                                setState(() => kiY_pos = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kiyp=$value');
-                              },
-                            ),
-                            buildImprovedPidControl(
-                              label: 'Kd Y+ (Differential)',
-                              param: 'kdyp',
-                              value: kdY_pos,
-                              min: 0,
-                              max: 10,
-                              smallStep: 0.001,
-                              largeStep: 0.01,
-                              controller: kdYPosController,
-                              onChanged: (value) {
-                                setState(() => kdY_pos = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kdyp=$value');
-                              },
-                            ),
-                            
-                            // Y-Achse Negative Richtung
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              color: Colors.green.shade100,
-                              child: const Text(
-                                'Y- (Negative Richtung)',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                            buildImprovedPidControl(
-                              label: 'Kp Y- (Proportional)',
-                              param: 'kpyn',
-                              value: kpY_neg,
-                              min: 20,
-                              max: 200,
-                              smallStep: 0.05,
-                              largeStep: 1,
-                              controller: kpYNegController,
-                              onChanged: (value) {
-                                setState(() => kpY_neg = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kpyn=$value');
-                              },
-                            ),
-                            buildImprovedPidControl(
-                              label: 'Ki Y- (Integral)',
-                              param: 'kiyn',
-                              value: kiY_neg,
-                              min: 0,
-                              max: 100,
-                              smallStep: 0.1,
-                              largeStep: 1,
-                              controller: kiYNegController,
-                              onChanged: (value) {
-                                setState(() => kiY_neg = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kiyn=$value');
-                              },
-                            ),
-                            buildImprovedPidControl(
-                              label: 'Kd Y- (Differential)',
-                              param: 'kdyn',
-                              value: kdY_neg,
-                              min: 0,
-                              max: 10,
-                              smallStep: 0.001,
-                              largeStep: 0.01,
-                              controller: kdYNegController,
-                              onChanged: (value) {
-                                setState(() => kdY_neg = value);
-                                _savePidValues();
-                                _sendPidCommandDebounced('kdyn=$value');
-                              },
-                            ),
-                          ],
-                        ),
-
-                        // START: NEUE KARTE FÜR D-TERM FILTER
-                        Container(
-                          margin: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 8),
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                          decoration: BoxDecoration(
-                            color: Colors.purple.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.purple.shade200),
+                            ],
                           ),
-                          child: buildImprovedPidControl(
-                            label: 'D-Anteil Glättung (Zeitkonstante)',
-                            param: 'dtc',
-                            value: dFilterTimeConstantS,
-                            min: 0.001,
-                            max: 0.05,
-                            smallStep: 0.0005,
-                            largeStep: 0.001,
-                            controller: dFilterTimeConstantController,
-                            onChanged: (value) {
-                              setState(() => dFilterTimeConstantS = value);
-                              _savePidValues();
-                              _sendPidCommandDebounced('dtc=$value');
-                            },
-                            // HIER IST DIE UI-VERBESSERUNG:
-                            secondaryInfo: Text(
-                              '≈ ${dTermCutoffHz.toStringAsFixed(1)} Hz Grenzfrequenz',
-                              style: TextStyle(fontSize: 12, color: Colors.purple.shade400, fontStyle: FontStyle.italic),
-                            ),
-                          ),
-                        ),
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 28),
-                          child: const Text(
-                            'Erhöhen für mehr Glättung (trägere Reaktion), verringern für schnellere Reaktion (mehr Rauschen). Empfehlung: 0.002 - 0.015 s.',
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
-                        ),
-                        // ENDE: NEUE KARTE FÜR D-TERM FILTER
-
-                        const SizedBox(height: 20),
+                        ],
                       ],
                     ),
                   ),
+                  const SizedBox(height: 12),
+
+                  // Buttons
+                  Wrap(
+                    alignment: WrapAlignment.spaceEvenly, // Behält eine ähnliche Verteilung bei
+                    spacing: 8.0, // Horizontaler Abstand zwischen den Buttons
+                    runSpacing: 4.0, // Vertikaler Abstand, wenn Buttons umbrechen
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: showPresetDialog,
+                        icon: const Icon(Icons.settings_suggest, size: 20),
+                        label: const Text('PID Presets'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Ggf. Padding beibehalten oder anpassen
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: showFilterDialog,
+                        icon: const Icon(Icons.filter_alt, size: 20),
+                        label: const Text('Sensor Filter'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.purple,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Ggf. Padding beibehalten oder anpassen
+                        ),
+                      ),
+                      if (isCalibrated == false)
+                        Padding( // Optional: Padding um den IconButton für konsistenten Abstand
+                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                          child: IconButton(
+                            onPressed: () {
+                              _tabController.animateTo(2);
+                            },
+                            icon: const Icon(Icons.warning, color: Colors.orange),
+                            tooltip: 'Kalibrierung fehlt!',
+                          ),
+                        ),
+                      ElevatedButton.icon(
+                        onPressed: disconnect,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Ggf. Padding beibehalten oder anpassen
+                        ),
+                        icon: const Icon(Icons.close, size: 18),
+                        label: const Text('Trennen'),
+                      ),
+                    ],
+                  ),
                 ],
-              );
+              ),
+            ),
+          ],
+        ),
+
+        Expanded(
+          child: ListView(
+            children: [
+              // X-ACHSE QUADRANTEN-REGLER
+              ExpansionTile(
+                title: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: const Text(
+                    'X-Achse Regler (Vier-Quadranten)',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+                  ),
+                ),
+                backgroundColor: Colors.blue.shade50,
+                collapsedBackgroundColor: Colors.blue.shade50,
+                initiallyExpanded: true,
+                children: [
+                  // X-Achse Positive Richtung
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    color: Colors.blue.shade100,
+                    child: const Text(
+                      'X+ (Positive Richtung)',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Kp X+ (Proportional)',
+                    param: 'kpxp',
+                    value: kpX_pos,
+                    min: 20,
+                    max: 200,
+                    smallStep: 0.05,
+                    largeStep: 1,
+                    controller: kpXPosController,
+                    onChanged: (value) {
+                      setState(() => kpX_pos = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kpxp=$value');
+                    },
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Ki X+ (Integral)',
+                    param: 'kixp',
+                    value: kiX_pos,
+                    min: 0,
+                    max: 100,
+                    smallStep: 0.1,
+                    largeStep: 1,
+                    controller: kiXPosController,
+                    onChanged: (value) {
+                      setState(() => kiX_pos = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kixp=$value');
+                    },
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Kd X+ (Differential)',
+                    param: 'kdxp',
+                    value: kdX_pos,
+                    min: 0,
+                    max: 10,
+                    smallStep: 0.001,
+                    largeStep: 0.01,
+                    controller: kdXPosController,
+                    onChanged: (value) {
+                      setState(() => kdX_pos = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kdxp=$value');
+                    },
+                  ),
+
+                  // X-Achse Negative Richtung
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    color: Colors.blue.shade100,
+                    child: const Text(
+                      'X- (Negative Richtung)',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Kp X- (Proportional)',
+                    param: 'kpxn',
+                    value: kpX_neg,
+                    min: 20,
+                    max: 200,
+                    smallStep: 0.05,
+                    largeStep: 1,
+                    controller: kpXNegController,
+                    onChanged: (value) {
+                      setState(() => kpX_neg = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kpxn=$value');
+                    },
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Ki X- (Integral)',
+                    param: 'kixn',
+                    value: kiX_neg,
+                    min: 0,
+                    max: 100,
+                    smallStep: 0.1,
+                    largeStep: 1,
+                    controller: kiXNegController,
+                    onChanged: (value) {
+                      setState(() => kiX_neg = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kixn=$value');
+                    },
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Kd X- (Differential)',
+                    param: 'kdxn',
+                    value: kdX_neg,
+                    min: 0,
+                    max: 10,
+                    smallStep: 0.001,
+                    largeStep: 0.01,
+                    controller: kdXNegController,
+                    onChanged: (value) {
+                      setState(() => kdX_neg = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kdxn=$value');
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              // Y-ACHSE QUADRANTEN-REGLER
+              ExpansionTile(
+                title: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: const Text(
+                    'Y-Achse Regler (Vier-Quadranten)',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
+                  ),
+                ),
+                backgroundColor: Colors.green.shade50,
+                collapsedBackgroundColor: Colors.green.shade50,
+                initiallyExpanded: true,
+                children: [
+                  // Y-Achse Positive Richtung
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    color: Colors.green.shade100,
+                    child: const Text(
+                      'Y+ (Positive Richtung)',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Kp Y+ (Proportional)',
+                    param: 'kpyp',
+                    value: kpY_pos,
+                    min: 20,
+                    max: 200,
+                    smallStep: 0.05,
+                    largeStep: 1,
+                    controller: kpYPosController,
+                    onChanged: (value) {
+                      setState(() => kpY_pos = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kpyp=$value');
+                    },
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Ki Y+ (Integral)',
+                    param: 'kiyp',
+                    value: kiY_pos,
+                    min: 0,
+                    max: 100,
+                    smallStep: 0.1,
+                    largeStep: 1,
+                    controller: kiYPosController,
+                    onChanged: (value) {
+                      setState(() => kiY_pos = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kiyp=$value');
+                    },
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Kd Y+ (Differential)',
+                    param: 'kdyp',
+                    value: kdY_pos,
+                    min: 0,
+                    max: 10,
+                    smallStep: 0.001,
+                    largeStep: 0.01,
+                    controller: kdYPosController,
+                    onChanged: (value) {
+                      setState(() => kdY_pos = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kdyp=$value');
+                    },
+                  ),
+
+                  // Y-Achse Negative Richtung
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    color: Colors.green.shade100,
+                    child: const Text(
+                      'Y- (Negative Richtung)',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Kp Y- (Proportional)',
+                    param: 'kpyn',
+                    value: kpY_neg,
+                    min: 20,
+                    max: 200,
+                    smallStep: 0.05,
+                    largeStep: 1,
+                    controller: kpYNegController,
+                    onChanged: (value) {
+                      setState(() => kpY_neg = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kpyn=$value');
+                    },
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Ki Y- (Integral)',
+                    param: 'kiyn',
+                    value: kiY_neg,
+                    min: 0,
+                    max: 100,
+                    smallStep: 0.1,
+                    largeStep: 1,
+                    controller: kiYNegController,
+                    onChanged: (value) {
+                      setState(() => kiY_neg = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kiyn=$value');
+                    },
+                  ),
+                  buildImprovedPidControl(
+                    label: 'Kd Y- (Differential)',
+                    param: 'kdyn',
+                    value: kdY_neg,
+                    min: 0,
+                    max: 10,
+                    smallStep: 0.001,
+                    largeStep: 0.01,
+                    controller: kdYNegController,
+                    onChanged: (value) {
+                      setState(() => kdY_neg = value);
+                      _savePidValues();
+                      _sendPidCommandDebounced('kdyn=$value');
+                    },
+                  ),
+                ],
+              ),
+
+              // START: NEUE KARTE FÜR D-TERM FILTER
+              Container(
+                margin: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 8),
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: buildImprovedPidControl(
+                  label: 'D-Anteil Glättung (Zeitkonstante)',
+                  param: 'dtc',
+                  value: dFilterTimeConstantS,
+                  min: 0.001,
+                  max: 0.05,
+                  smallStep: 0.0005,
+                  largeStep: 0.001,
+                  controller: dFilterTimeConstantController,
+                  onChanged: (value) {
+                    setState(() => dFilterTimeConstantS = value);
+                    _savePidValues();
+                    _sendPidCommandDebounced('dtc=$value');
+                  },
+                  // HIER IST DIE UI-VERBESSERUNG:
+                  secondaryInfo: Text(
+                    '≈ ${dTermCutoffHz.toStringAsFixed(1)} Hz Grenzfrequenz',
+                    style: TextStyle(fontSize: 12, color: Colors.purple.shade400, fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 28),
+                child: const Text(
+                  'Erhöhen für mehr Glättung (trägere Reaktion), verringern für schnellere Reaktion (mehr Rauschen). Empfehlung: 0.002 - 0.015 s.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ),
+              // ENDE: NEUE KARTE FÜR D-TERM FILTER
+
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ],
+    );
   }
-  
+
   Widget _buildFloatingNavBar() {
     final screenSize = MediaQuery.of(context).size;
     final double expandedWidth = screenSize.width - 80;
     final dockThreshold = 50.0; // Pixels from edge to trigger docking
-    
+
     // Handle expanded/collapsed positioning
     if (_isNavExpanded) {
       // When expanded, always show at original position
@@ -9783,11 +10784,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
       );
     }
-    
+
     // Collapsed state - draggable button
     double actualLeft = _fabPosition.dx;
     double actualBottom = _fabPosition.dy;
-    
+
     // Only adjust position on orientation change, not during drag
     if (!_isDragging) {
       // Ensure button stays visible after orientation change
@@ -9814,14 +10815,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         });
       }
     }
-    
+
     // Handle docked states
     if (_isDockedLeft) {
       actualLeft = -40 + (_dockProgress * 40); // Slide into edge
     } else if (_isDockedRight) {
       actualLeft = screenSize.width - 20 - (_dockProgress * 40);
     }
-    
+
     return Stack(
       children: [
         // Main floating button
@@ -9832,81 +10833,81 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           bottom: actualBottom,
           child: RepaintBoundary(
             child: GestureDetector(
-            onPanStart: (_) {
-              _isDragging = true;
-              _isDockedLeft = false;
-              _isDockedRight = false;
-              _dockProgress = 0.0;
-            },
-            onPanUpdate: (details) {
-              // Update position without setState for smooth dragging
-              final newX = (_fabPosition.dx + details.delta.dx).clamp(0.0, screenSize.width - 60);
-              final newY = (_fabPosition.dy - details.delta.dy).clamp(20.0, screenSize.height - 100);
-              
-              // Only update if position actually changed
-              if (newX != _fabPosition.dx || newY != _fabPosition.dy) {
-                setState(() {
-                  _fabPosition = Offset(newX, newY);
-                });
-              }
-            },
-            onPanEnd: (_) {
-              setState(() {
-                _isDragging = false;
-                
-                // Check for docking
-                if (_fabPosition.dx < dockThreshold) {
-                  _isDockedLeft = true;
-                  _animateDocking();
-                } else if (_fabPosition.dx > screenSize.width - 60 - dockThreshold) {
-                  _isDockedRight = true;
-                  _animateDocking();
+              onPanStart: (_) {
+                _isDragging = true;
+                _isDockedLeft = false;
+                _isDockedRight = false;
+                _dockProgress = 0.0;
+              },
+              onPanUpdate: (details) {
+                // Update position without setState for smooth dragging
+                final newX = (_fabPosition.dx + details.delta.dx).clamp(0.0, screenSize.width - 60);
+                final newY = (_fabPosition.dy - details.delta.dy).clamp(20.0, screenSize.height - 100);
+
+                // Only update if position actually changed
+                if (newX != _fabPosition.dx || newY != _fabPosition.dy) {
+                  setState(() {
+                    _fabPosition = Offset(newX, newY);
+                  });
                 }
-              });
-            },
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 200),
-              opacity: (_isDockedLeft || _isDockedRight) ? 0.3 + (0.7 * (1 - _dockProgress)) : 1.0,
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x40000000),
-                      blurRadius: 16,
-                      offset: Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: IconButton(
-                  icon: const Icon(
-                    Icons.apps,
-                    color: Colors.white,
-                    size: 24,
+              },
+              onPanEnd: (_) {
+                setState(() {
+                  _isDragging = false;
+
+                  // Check for docking
+                  if (_fabPosition.dx < dockThreshold) {
+                    _isDockedLeft = true;
+                    _animateDocking();
+                  } else if (_fabPosition.dx > screenSize.width - 60 - dockThreshold) {
+                    _isDockedRight = true;
+                    _animateDocking();
+                  }
+                });
+              },
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: (_isDockedLeft || _isDockedRight) ? 0.3 + (0.7 * (1 - _dockProgress)) : 1.0,
+                child: Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.8),
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x40000000),
+                        blurRadius: 16,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
                   ),
-                  onPressed: () {
-                    if (_isDockedLeft || _isDockedRight) {
-                      setState(() {
-                        _isDockedLeft = false;
-                        _isDockedRight = false;
-                        _dockProgress = 0.0;
-                      });
-                    } else {
-                      setState(() {
-                        _isNavExpanded = true;
-                      });
-                    }
-                  },
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.apps,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                    onPressed: () {
+                      if (_isDockedLeft || _isDockedRight) {
+                        setState(() {
+                          _isDockedLeft = false;
+                          _isDockedRight = false;
+                          _dockProgress = 0.0;
+                        });
+                      } else {
+                        setState(() {
+                          _isNavExpanded = true;
+                        });
+                      }
+                    },
+                  ),
                 ),
               ),
             ),
-            ),
           ),
         ),
-        
+
         // Docked edge indicator (small tab)
         if ((_isDockedLeft || _isDockedRight) && _dockProgress > 0.5)
           AnimatedPositioned(
@@ -9956,18 +10957,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ],
     );
   }
-  
+
   void _animateDocking() {
     if (_isDockAnimating) return;
     _isDockAnimating = true;
-    
+
     // Animate dock progress
     Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      
+
       setState(() {
         _dockProgress += 0.05;
         if (_dockProgress >= 1.0) {
@@ -9994,7 +10995,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
         margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected 
+          color: isSelected
               ? Colors.white.withOpacity(0.2)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(22),
@@ -10005,7 +11006,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           children: [
             Icon(
               icon,
-              color: isSelected 
+              color: isSelected
                   ? Colors.white
                   : Colors.white70,
               size: 20,
@@ -10026,7 +11027,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   IconData _getIconForTab(int index) {
     switch (index) {
       case 0:
@@ -10039,7 +11040,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         return Icons.menu;
     }
   }
-  
+
   // Heatmap-Visualisierung für Mix-Grid
   Widget _buildMixGridHeatmap(String title, Map<String, List<List<double>>> mixGrids) {
     return Container(
@@ -10078,7 +11079,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   Widget _buildQuadrantHeatmap(String label, List<List<double>> data) {
     if (data.isEmpty) {
       return Container(
@@ -10094,7 +11095,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
       );
     }
-    
+
     // Find min/max values for color mapping
     double minVal = double.infinity;
     double maxVal = double.negativeInfinity;
@@ -10104,7 +11105,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         if (val > maxVal) maxVal = val;
       }
     }
-    
+
     return Column(
       children: [
         Text(
@@ -10121,7 +11122,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ],
     );
   }
-  
+
   // Widget zur Anzeige der heruntergeladenen Kalibrierungsdaten
   Widget _buildDownloadedDataView() {
     return DefaultTabController(
@@ -10153,7 +11154,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ],
               ),
             ),
-            
+
             // Tab Bar
             Container(
               decoration: BoxDecoration(
@@ -10172,7 +11173,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ],
               ),
             ),
-            
+
             // Tab Views mit fester Höhe
             SizedBox(
               height: 750, // Viel mehr Höhe für die Diagramme
@@ -10235,7 +11236,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       ),
                     ],
                   ),
-                  
+
                   // Tab 2: Mix-Matrix Heatmaps
                   Padding(
                     padding: const EdgeInsets.all(16),
@@ -10249,7 +11250,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       ),
     );
   }
-  
+
   // Interaktive Mix-Matrix-Ansicht mit Auswahl-Buttons
   Widget _buildInteractiveMixMatrixView() {
     return StatefulBuilder(
@@ -10257,7 +11258,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         // Bestimme welche Heatmap angezeigt werden soll
         String heatmapKey = '${selectedMixAxis}_Q_$selectedMixQuadrant';
         List<List<double>> selectedData = downloadedMixGrids[heatmapKey] ?? [];
-        
+
         return Column(
           children: [
             // Auswahlbereich
@@ -10287,32 +11288,32 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       const SizedBox(width: 16),
                       Flexible(
                         child: ToggleButtons(
-                        isSelected: [selectedMixAxis == 'X', selectedMixAxis == 'Y'],
-                        onPressed: (int index) {
-                          setState(() {
-                            selectedMixAxis = index == 0 ? 'X' : 'Y';
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(8),
-                        selectedBorderColor: Colors.blue,
-                        selectedColor: Colors.white,
-                        fillColor: Colors.blue,
-                        color: Colors.black87,
-                        constraints: const BoxConstraints(
-                          minHeight: 36.0,
-                          minWidth: 60.0,
+                          isSelected: [selectedMixAxis == 'X', selectedMixAxis == 'Y'],
+                          onPressed: (int index) {
+                            setState(() {
+                              selectedMixAxis = index == 0 ? 'X' : 'Y';
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          selectedBorderColor: Colors.blue,
+                          selectedColor: Colors.white,
+                          fillColor: Colors.blue,
+                          color: Colors.black87,
+                          constraints: const BoxConstraints(
+                            minHeight: 36.0,
+                            minWidth: 60.0,
+                          ),
+                          children: const [
+                            Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8.0),
+                              child: Text('X-Korr.'),
+                            ),
+                            Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8.0),
+                              child: Text('Y-Korr.'),
+                            ),
+                          ],
                         ),
-                        children: const [
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8.0),
-                            child: Text('X-Korr.'),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8.0),
-                            child: Text('Y-Korr.'),
-                          ),
-                        ],
-                      ),
                       ),
                     ],
                   ),
@@ -10422,88 +11423,88 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     Expanded(
                       child: selectedData.isEmpty
                           ? Center(
-                              child: Text(
-                                'Keine Daten für $heatmapKey',
-                                style: const TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            )
+                        child: Text(
+                          'Keine Daten für $heatmapKey',
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 16,
+                          ),
+                        ),
+                      )
                           : LayoutBuilder(
-                              builder: (context, constraints) {
-                                return GestureDetector(
-                                  onTapDown: (TapDownDetails details) {
-                                    // Berechne welche Zelle angeklickt wurde
-                                    final rows = selectedData.length;
-                                    final cols = selectedData[0].length;
-                                    final cellWidth = constraints.maxWidth / cols;
-                                    final cellHeight = constraints.maxHeight / rows;
-                                    
-                                    final col = (details.localPosition.dx / cellWidth).floor();
-                                    final row = (details.localPosition.dy / cellHeight).floor();
-                                    
-                                    if (row >= 0 && row < rows && col >= 0 && col < cols) {
-                                      final value = selectedData[row][col];
-                                      final xPwm = (col * 1023 / (cols - 1)).round();
-                                      final yPwm = (row * 1023 / (rows - 1)).round();
-                                      
-                                      showDialog(
-                                        context: context,
-                                        builder: (BuildContext context) {
-                                          return AlertDialog(
-                                            title: Text('Grid-Punkt [$row, $col]'),
-                                            content: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text('Position: Zeile $row, Spalte $col'),
-                                                Text('PWM X: ~$xPwm'),
-                                                Text('PWM Y: ~$yPwm'),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  'Korrekturwert: ${value.toStringAsFixed(3)} mT',
-                                                  style: const TextStyle(fontWeight: FontWeight.bold),
-                                                ),
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  value > 0 
-                                                    ? 'Positive Korrektur (Rot)' 
-                                                    : value < 0 
-                                                      ? 'Negative Korrektur (Blau)'
-                                                      : 'Neutral (Weiß)',
-                                                  style: TextStyle(
-                                                    color: value > 0 
-                                                      ? Colors.red 
-                                                      : value < 0 
-                                                        ? Colors.blue 
-                                                        : Colors.grey,
-                                                  ),
-                                                ),
-                                              ],
+                        builder: (context, constraints) {
+                          return GestureDetector(
+                            onTapDown: (TapDownDetails details) {
+                              // Berechne welche Zelle angeklickt wurde
+                              final rows = selectedData.length;
+                              final cols = selectedData[0].length;
+                              final cellWidth = constraints.maxWidth / cols;
+                              final cellHeight = constraints.maxHeight / rows;
+
+                              final col = (details.localPosition.dx / cellWidth).floor();
+                              final row = (details.localPosition.dy / cellHeight).floor();
+
+                              if (row >= 0 && row < rows && col >= 0 && col < cols) {
+                                final value = selectedData[row][col];
+                                final xPwm = (col * 1023 / (cols - 1)).round();
+                                final yPwm = (row * 1023 / (rows - 1)).round();
+
+                                showDialog(
+                                  context: context,
+                                  builder: (BuildContext context) {
+                                    return AlertDialog(
+                                      title: Text('Grid-Punkt [$row, $col]'),
+                                      content: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Position: Zeile $row, Spalte $col'),
+                                          Text('PWM X: ~$xPwm'),
+                                          Text('PWM Y: ~$yPwm'),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Korrekturwert: ${value.toStringAsFixed(3)} mT',
+                                            style: const TextStyle(fontWeight: FontWeight.bold),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            value > 0
+                                                ? 'Positive Korrektur (Rot)'
+                                                : value < 0
+                                                ? 'Negative Korrektur (Blau)'
+                                                : 'Neutral (Weiß)',
+                                            style: TextStyle(
+                                              color: value > 0
+                                                  ? Colors.red
+                                                  : value < 0
+                                                  ? Colors.blue
+                                                  : Colors.grey,
                                             ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () => Navigator.of(context).pop(),
-                                                child: const Text('OK'),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      );
-                                    }
+                                          ),
+                                        ],
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.of(context).pop(),
+                                          child: const Text('OK'),
+                                        ),
+                                      ],
+                                    );
                                   },
-                                  child: CustomPaint(
-                                    size: const Size(double.infinity, double.infinity),
-                                    painter: HeatmapPainter(
-                                      selectedData,
-                                      _getMinValue(selectedData),
-                                      _getMaxValue(selectedData),
-                                    ),
-                                  ),
                                 );
-                              },
+                              }
+                            },
+                            child: CustomPaint(
+                              size: const Size(double.infinity, double.infinity),
+                              painter: HeatmapPainter(
+                                selectedData,
+                                _getMinValue(selectedData),
+                                _getMaxValue(selectedData),
+                              ),
                             ),
+                          );
+                        },
+                      ),
                     ),
                     // Legende
                     const SizedBox(height: 16),
@@ -10561,7 +11562,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       },
     );
   }
-  
+
   double _getMinValue(List<List<double>> data) {
     double minVal = double.infinity;
     for (var row in data) {
@@ -10571,7 +11572,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     }
     return minVal;
   }
-  
+
   double _getMaxValue(List<List<double>> data) {
     double maxVal = double.negativeInfinity;
     for (var row in data) {
@@ -10591,7 +11592,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       true, // mainAxis verwenden
     );
   }
-  
+
   // Kreuzkopplungs-Chart (zeigt crossAxis-Werte)
   Widget _buildCrossTalkChart() {
     return _buildAxisChart(
@@ -10601,23 +11602,23 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       false, // crossAxis verwenden
     );
   }
-  
+
   // Generische Chart-Funktion für beide Achsen
   Widget _buildAxisChart(String title, List<String> curveNames, String yAxisLabel, bool useMainAxis) {
     // --- START DEBUG-LOG ---
     // Debug output removed - graphs are working correctly now
-    
+
     final List<LineChartBarData> lineBarsData = [];
     final colors = [
       Colors.blue, Colors.blue.shade300, Colors.red, Colors.red.shade300,
       Colors.green, Colors.green.shade300, Colors.orange, Colors.orange.shade300
     ];
-    
+
     for (int i = 0; i < curveNames.length; i++) {
       final curveName = curveNames[i];
       if (downloadedCurves.containsKey(curveName)) {
         final curvePointsList = downloadedCurves[curveName]!;
-        
+
         // Schritt 1: Konvertiere zu FlSpot und filtere PWM=0 (außer dem allerersten Punkt)
         List<FlSpot> spots = [];
         for (int pointIdx = 0; pointIdx < curvePointsList.length; pointIdx++) {
@@ -10633,7 +11634,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ));
           }
         }
-        
+
         // Schritt 2: Entferne aufeinanderfolgende Duplikate basierend auf X-Wert (PWM)
         // Behalte den LETZTEN Punkt bei gleichem X-Wert
         if (spots.isNotEmpty) {
@@ -10643,12 +11644,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           }
           spots = uniqueXSpots.values.toList();
         }
-        
+
         // Schritt 3: Sortiere die bereinigten Spots nach X-Wert (PWM)
         spots.sort((a, b) => a.x.compareTo(b.x));
-        
+
         // Debug output removed - data processing working correctly
-        
+
         lineBarsData.add(
           LineChartBarData(
             spots: spots,
@@ -10662,158 +11663,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         );
       }
     }
-    
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          SizedBox(
-            height: 600,  // Viel höher für bessere Analyse!
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const ClampingScrollPhysics(),
-              child: Container(
-              width: 1800,  // Breiter für bessere Analyse
-              height: 600,  // Volle Höhe nutzen
-              padding: const EdgeInsets.all(10),
-              child: LineChart(
-                LineChartData(
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: true,
-                      horizontalInterval: 0.5,   // Weniger Linien
-                      verticalInterval: 100,     // Nur bei 100er Schritten
-                      getDrawingHorizontalLine: (value) {
-                        return FlLine(
-                          color: Colors.grey.shade300,
-                          strokeWidth: 1,
-                        );
-                      },
-                      getDrawingVerticalLine: (value) {
-                        return FlLine(
-                          color: Colors.grey.shade300,
-                          strokeWidth: 1,
-                        );
-                      },
-                    ),
-                    titlesData: FlTitlesData(
-                      show: true,
-                      rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 35,
-                          interval: 100,  // Weniger aber klarere Beschriftungen
-                          getTitlesWidget: (value, meta) {
-                            return Text(
-                              value.toInt().toString(),
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            );
-                          },
-                        ),
-                        axisNameWidget: const Text('PWM', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        axisNameSize: 18,
-                      ),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          interval: 0.5,  // Weniger Beschriftungen
-                          reservedSize: 50,
-                          getTitlesWidget: (value, meta) {
-                            return Text(
-                              value.toStringAsFixed(1),
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            );
-                          },
-                        ),
-                        axisNameWidget: Text(
-                          yAxisLabel, 
-                          style: const TextStyle(
-                            fontSize: 12, 
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        axisNameSize: 20,
-                      ),
-                    ),
-                    borderData: FlBorderData(
-                      show: true,
-                      border: Border.all(
-                        color: Colors.grey.shade600,
-                        width: 2,
-                      ),
-                    ),
-                    backgroundColor: Colors.grey.shade50,
-                    lineBarsData: lineBarsData,
-                    lineTouchData: const LineTouchData(
-                      enabled: false,
-                    ),
-                    // Bereich-Highlights für wichtige Zonen
-                    rangeAnnotations: RangeAnnotations(
-                      horizontalRangeAnnotations: [
-                        HorizontalRangeAnnotation(
-                          y1: -0.1,
-                          y2: 0.1,
-                          color: Colors.green.withOpacity(0.1),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  // Hilfsfunktion für Kennlinien-Charts
-  Widget _buildCurvesChart(String title, List<String> curveNames, String yAxisLabel) {
-    final List<LineChartBarData> lineBarsData = [];
-    final colors = [Colors.blue, Colors.blue.shade300, Colors.red, Colors.red.shade300];
-    
-    for (int i = 0; i < curveNames.length; i++) {
-      final curveName = curveNames[i];
-      if (downloadedCurves.containsKey(curveName)) {
-        final curve = downloadedCurves[curveName]!;
-        final spots = curve.asMap().entries.map((entry) {
-          return FlSpot(
-            entry.value.pwm.toDouble(),
-            entry.value.mainAxis,
-          );
-        }).toList();
-        
-        lineBarsData.add(
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: colors[i % colors.length],
-            barWidth: 2,
-            isStrokeCapRound: true,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(show: false),
-          ),
-        );
-      }
-    }
-    
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -10894,9 +11744,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                           },
                         ),
                         axisNameWidget: Text(
-                          yAxisLabel, 
+                          yAxisLabel,
                           style: const TextStyle(
-                            fontSize: 12, 
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -10930,51 +11780,202 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ),
             ),
           ),
-        // Kompakte Legende
-        SizedBox(
-          height: 30,
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: curveNames.asMap().entries.map((entry) {
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 16,
-                    height: 2,
-                    color: colors[entry.key % colors.length],
-                  ),
-                  const SizedBox(width: 3),
-                  Text(
-                    entry.value,
-                    style: const TextStyle(fontSize: 10),
-                  ),
-                ],
-              );
-            }).toList(),
-          ),
-        ),
-      ],
+        ],
       ),
     );
   }
-  
+
+  // Hilfsfunktion für Kennlinien-Charts
+  Widget _buildCurvesChart(String title, List<String> curveNames, String yAxisLabel) {
+    final List<LineChartBarData> lineBarsData = [];
+    final colors = [Colors.blue, Colors.blue.shade300, Colors.red, Colors.red.shade300];
+
+    for (int i = 0; i < curveNames.length; i++) {
+      final curveName = curveNames[i];
+      if (downloadedCurves.containsKey(curveName)) {
+        final curve = downloadedCurves[curveName]!;
+        final spots = curve.asMap().entries.map((entry) {
+          return FlSpot(
+            entry.value.pwm.toDouble(),
+            entry.value.mainAxis,
+          );
+        }).toList();
+
+        lineBarsData.add(
+          LineChartBarData(
+            spots: spots,
+            isCurved: false,
+            color: colors[i % colors.length],
+            barWidth: 2,
+            isStrokeCapRound: true,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+        );
+      }
+    }
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 600,  // Viel höher für bessere Analyse!
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: Container(
+                width: 1800,  // Breiter für bessere Analyse
+                height: 600,  // Volle Höhe nutzen
+                padding: const EdgeInsets.all(10),
+                child: LineChart(
+                  LineChartData(
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: true,
+                      horizontalInterval: 0.5,   // Weniger Linien
+                      verticalInterval: 100,     // Nur bei 100er Schritten
+                      getDrawingHorizontalLine: (value) {
+                        return FlLine(
+                          color: Colors.grey.shade300,
+                          strokeWidth: 1,
+                        );
+                      },
+                      getDrawingVerticalLine: (value) {
+                        return FlLine(
+                          color: Colors.grey.shade300,
+                          strokeWidth: 1,
+                        );
+                      },
+                    ),
+                    titlesData: FlTitlesData(
+                      show: true,
+                      rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 35,
+                          interval: 100,  // Weniger aber klarere Beschriftungen
+                          getTitlesWidget: (value, meta) {
+                            return Text(
+                              value.toInt().toString(),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            );
+                          },
+                        ),
+                        axisNameWidget: const Text('PWM', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        axisNameSize: 18,
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          interval: 0.5,  // Weniger Beschriftungen
+                          reservedSize: 50,
+                          getTitlesWidget: (value, meta) {
+                            return Text(
+                              value.toStringAsFixed(1),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            );
+                          },
+                        ),
+                        axisNameWidget: Text(
+                          yAxisLabel,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        axisNameSize: 20,
+                      ),
+                    ),
+                    borderData: FlBorderData(
+                      show: true,
+                      border: Border.all(
+                        color: Colors.grey.shade600,
+                        width: 2,
+                      ),
+                    ),
+                    backgroundColor: Colors.grey.shade50,
+                    lineBarsData: lineBarsData,
+                    lineTouchData: const LineTouchData(
+                      enabled: false,
+                    ),
+                    // Bereich-Highlights für wichtige Zonen
+                    rangeAnnotations: RangeAnnotations(
+                      horizontalRangeAnnotations: [
+                        HorizontalRangeAnnotation(
+                          y1: -0.1,
+                          y2: 0.1,
+                          color: Colors.green.withOpacity(0.1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Kompakte Legende
+          SizedBox(
+            height: 30,
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: curveNames.asMap().entries.map((entry) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 16,
+                      height: 2,
+                      color: colors[entry.key % colors.length],
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      entry.value,
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _exportCalibrationData() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
       final file = File('${directory.path}/calibration_data_${DateTime.now().millisecondsSinceEpoch}.json');
-      
+
       final exportData = {
         'timestamp': DateTime.now().toIso8601String(),
-        'curves': downloadedCurves.map((key, value) => MapEntry(key, 
-          value.map((p) => {'pwm': p.pwm, 'mainAxis': p.mainAxis, 'crossAxis': p.crossAxis}).toList()
+        'curves': downloadedCurves.map((key, value) => MapEntry(key,
+            value.map((p) => {'pwm': p.pwm, 'mainAxis': p.mainAxis, 'crossAxis': p.crossAxis}).toList()
         )),
         'mixGrids': downloadedMixGrids,
       };
-      
+
       await file.writeAsString(jsonEncode(exportData));
-      
+
       await Share.shareXFiles(
         [XFile(file.path)],
         text: 'Kalibrierungsdaten Export',
@@ -11115,18 +12116,18 @@ class HeatmapPainter extends CustomPainter {
   final List<List<double>> data;
   final double minValue;
   final double maxValue;
-  
+
   HeatmapPainter(this.data, this.minValue, this.maxValue);
-  
+
   @override
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty || data[0].isEmpty) return;
-    
+
     final rows = data.length;
     final cols = data[0].length;
     final cellWidth = size.width / cols;
     final cellHeight = size.height / rows;
-    
+
     // Find the maximum absolute value for better color scaling
     double maxAbsValue = 0;
     for (var row in data) {
@@ -11136,11 +12137,11 @@ class HeatmapPainter extends CustomPainter {
         }
       }
     }
-    
+
     for (int i = 0; i < rows; i++) {
       for (int j = 0; j < cols; j++) {
         final value = data[i][j];
-        
+
         Color color;
         if (maxAbsValue == 0) {
           // Everything is zero, use neutral color
@@ -11148,7 +12149,7 @@ class HeatmapPainter extends CustomPainter {
         } else {
           // Normalize value from -1 to +1 based on max absolute value
           final normalizedValue = value / maxAbsValue;
-          
+
           if (value.abs() < 0.01 * maxAbsValue) {
             // Very close to zero - use white/neutral color (good calibration)
             color = Colors.white;
@@ -11164,36 +12165,36 @@ class HeatmapPainter extends CustomPainter {
             color = Color.lerp(Colors.white, Colors.blue, intensity * 0.8)!;
           }
         }
-        
+
         final rect = Rect.fromLTWH(
           j * cellWidth,
           i * cellHeight,
           cellWidth,
           cellHeight,
         );
-        
+
         final paint = Paint()
           ..color = color
           ..style = PaintingStyle.fill;
-        
+
         canvas.drawRect(rect, paint);
-        
+
         // Draw grid lines
         final gridPaint = Paint()
           ..color = Colors.grey.withOpacity(0.3)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 0.5;
-        
+
         canvas.drawRect(rect, gridPaint);
       }
     }
   }
-  
+
   @override
-  bool shouldRepaint(covariant HeatmapPainter oldDelegate) => 
-      oldDelegate.data != data || 
-      oldDelegate.minValue != minValue || 
-      oldDelegate.maxValue != maxValue;
+  bool shouldRepaint(covariant HeatmapPainter oldDelegate) =>
+      oldDelegate.data != data ||
+          oldDelegate.minValue != minValue ||
+          oldDelegate.maxValue != maxValue;
 }
 
 // =============================================================
