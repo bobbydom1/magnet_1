@@ -461,6 +461,9 @@ class ChartWidgetModel extends AnalysisWidgetModel {
   final double? upperThreshold;
   final double? lowerThreshold;
   final double lineThickness; // Neue Option für Linienstärke
+  final bool showDataPoints; // Neue Option für Datenpunkte
+  final double pointRadius; // Neue Option für Punkt-Radius
+  final bool showLines; // Neue Option für Linien anzeigen
 
   ChartWidgetModel({
     required String id,
@@ -473,6 +476,9 @@ class ChartWidgetModel extends AnalysisWidgetModel {
     this.upperThreshold,
     this.lowerThreshold,
     this.lineThickness = 2.0,
+    this.showDataPoints = false,
+    this.pointRadius = 2.0,
+    this.showLines = true,
     AnalysisWidgetSize size = AnalysisWidgetSize.wideRectangle,
     GridPosition? position,
   }) : super(id: id, title: title, type: 'chart', size: size, position: position);
@@ -575,6 +581,9 @@ class AnalysisTab {
         title: 'Sensor-Diagramm',
         lineThickness: 2.0,
         showTimeControls: true, // Aktiviere Zeitkontrollen standardmäßig für Live-Tabs
+        showDataPoints: false,
+        pointRadius: 2.0,
+        showLines: true,
         size: AnalysisWidgetSize.fullWidth, // 4x4 Größe
         position: GridPosition(x: 0, y: 0), // Position oben links
       ),
@@ -1240,12 +1249,18 @@ class RealtimeChartPainter extends CustomPainter {
   final int displayRange;
   final bool showGrid;
   final double lineThickness;
+  final bool showDataPoints;
+  final double pointRadius;
+  final bool showLines;
 
   RealtimeChartPainter({
     required this.visibleData,
     required this.displayRange,
     required this.showGrid,
     required this.lineThickness,
+    this.showDataPoints = false,
+    this.pointRadius = 2.0,
+    this.showLines = true,
   });
 
   @override
@@ -1289,49 +1304,78 @@ class RealtimeChartPainter extends CustomPainter {
       }
     }
 
-    // X-Achse zeichnen (rot)
-    final xPath = Path();
-    final xPaint = Paint()
-      ..color = CupertinoColors.systemRed
-      ..strokeWidth = lineThickness
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+    // Zeichne Linien nur wenn aktiviert
+    if (showLines) {
+      // X-Achse zeichnen (rot)
+      final xPath = Path();
+      final xPaint = Paint()
+        ..color = CupertinoColors.systemRed
+        ..strokeWidth = lineThickness
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
 
-    // Y-Achse zeichnen (blau)
-    final yPath = Path();
-    final yPaint = Paint()
-      ..color = CupertinoColors.activeBlue
-      ..strokeWidth = lineThickness
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
+      // Y-Achse zeichnen (blau)
+      final yPath = Path();
+      final yPaint = Paint()
+        ..color = CupertinoColors.activeBlue
+        ..strokeWidth = lineThickness
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
 
-    // Zurück zur Index-basierten Schleife für Stabilität
-    for (int i = 0; i < visibleData.length; i++) {
-      final reading = visibleData[i];
-      // Zeitdifferenz zur Startzeit der sichtbaren Daten berechnen
-      final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
-      // X-Position basierend auf dem gesamten Zeitfenster skalieren
-      final x = (timeDiff / displayRange) * size.width;
+      // Zurück zur Index-basierten Schleife für Stabilität
+      for (int i = 0; i < visibleData.length; i++) {
+        final reading = visibleData[i];
+        // Zeitdifferenz zur Startzeit der sichtbaren Daten berechnen
+        final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+        // X-Position basierend auf dem gesamten Zeitfenster skalieren
+        final x = (timeDiff / displayRange) * size.width;
 
-      // X-Achse
-      final xY = size.height - ((reading.x - minVal) / (maxVal - minVal)) * size.height;
-      if (i == 0) {
-        xPath.moveTo(x, xY);
-      } else {
-        xPath.lineTo(x, xY);
+        // X-Achse
+        final xY = size.height - ((reading.x - minVal) / (maxVal - minVal)) * size.height;
+        if (i == 0) {
+          xPath.moveTo(x, xY);
+        } else {
+          xPath.lineTo(x, xY);
+        }
+
+        // Y-Achse
+        final yY = size.height - ((reading.y - minVal) / (maxVal - minVal)) * size.height;
+        if (i == 0) {
+          yPath.moveTo(x, yY);
+        } else {
+          yPath.lineTo(x, yY);
+        }
       }
 
-      // Y-Achse
-      final yY = size.height - ((reading.y - minVal) / (maxVal - minVal)) * size.height;
-      if (i == 0) {
-        yPath.moveTo(x, yY);
-      } else {
-        yPath.lineTo(x, yY);
+      canvas.drawPath(xPath, xPaint);
+      canvas.drawPath(yPath, yPaint);
+    }
+    
+    // Zeichne Datenpunkte wenn aktiviert
+    if (showDataPoints && visibleData.length < 5000) { // Limit für Performance
+      final xPointPaint = Paint()
+        ..color = CupertinoColors.systemRed
+        ..style = PaintingStyle.fill;
+      
+      final yPointPaint = Paint()
+        ..color = CupertinoColors.activeBlue
+        ..style = PaintingStyle.fill;
+      
+      // Zeichne jeden Punkt
+      for (int i = 0; i < visibleData.length; i++) {
+        final reading = visibleData[i];
+        final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+        final x = (timeDiff / displayRange) * size.width;
+        
+        // X-Achse Punkt
+        final xY = size.height - ((reading.x - minVal) / (maxVal - minVal)) * size.height;
+        canvas.drawCircle(Offset(x, xY), pointRadius, xPointPaint);
+        
+        // Y-Achse Punkt
+        final yY = size.height - ((reading.y - minVal) / (maxVal - minVal)) * size.height;
+        canvas.drawCircle(Offset(x, yY), pointRadius, yPointPaint);
       }
     }
-
-    canvas.drawPath(xPath, xPaint);
-    canvas.drawPath(yPath, yPaint);
   }
 
   @override
@@ -1399,6 +1443,13 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
           _buffer.removeFirst();
         }
       }
+      
+      // Zähle nur die Punkte, die tatsächlich im sichtbaren Buffer sind
+      final homePageState = context.findAncestorStateOfType<_HomePageState>();
+      if (homePageState != null && mounted) {
+        // Setze den Zähler auf die aktuelle Buffer-Größe (nicht addieren!)
+        homePageState._chartPointCounter = _buffer.length;
+      }
     });
   }
 
@@ -1452,6 +1503,8 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                       triggerEnabled: widget.model.triggerEnabled,
                       upperThreshold: widget.model.upperThreshold,
                       lowerThreshold: widget.model.lowerThreshold,
+                      showDataPoints: widget.model.showDataPoints,
+                      pointRadius: widget.model.pointRadius,
                       size: widget.model.size,
                       position: widget.model.position,
                     ));
@@ -1535,6 +1588,9 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                 displayRange: widget.model.displayRange,
                 showGrid: widget.model.showGrid,
                 lineThickness: widget.model.lineThickness,
+                showDataPoints: widget.model.showDataPoints,
+                pointRadius: widget.model.pointRadius,
+                showLines: widget.model.showLines,
               ),
               size: Size.infinite,
             ),
@@ -4429,6 +4485,29 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                 ),
               ),
             ),
+            
+            // Settings Button (nur für Chart Widgets)
+            if (model.type == 'chart')
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: GestureDetector(
+                  onTap: () => _showChartSettings(tabIndex, widgetIndex, model as ChartWidgetModel),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemBlue,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.settings,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ],
       ),
@@ -5654,6 +5733,108 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
               ),
             ),
             const Divider(),
+            
+            // Datenpunkte anzeigen
+            ListTile(
+              title: const Text('Datenpunkte anzeigen'),
+              subtitle: const Text('Zeigt einzelne Messpunkte als Kreise'),
+              trailing: Switch(
+                value: chartModel.showDataPoints,
+                onChanged: (value) {
+                  setState(() {
+                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                      id: chartModel.id,
+                      title: chartModel.title,
+                      showGrid: chartModel.showGrid,
+                      showLegend: chartModel.showLegend,
+                      displayRange: chartModel.displayRange,
+                      showTimeControls: chartModel.showTimeControls,
+                      triggerEnabled: chartModel.triggerEnabled,
+                      upperThreshold: chartModel.upperThreshold,
+                      lowerThreshold: chartModel.lowerThreshold,
+                      lineThickness: chartModel.lineThickness,
+                      showDataPoints: value,
+                      pointRadius: chartModel.pointRadius,
+                      size: chartModel.size,
+                      position: chartModel.position,
+                    );
+                  });
+                  setModalState(() {});
+                },
+              ),
+            ),
+            
+            // Linien anzeigen
+            const Divider(),
+            ListTile(
+              title: const Text('Linien anzeigen'),
+              subtitle: const Text('Zeigt Verbindungslinien zwischen den Punkten'),
+              trailing: Switch(
+                value: chartModel.showLines,
+                onChanged: (value) {
+                  setState(() {
+                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                      id: chartModel.id,
+                      title: chartModel.title,
+                      showGrid: chartModel.showGrid,
+                      showLegend: chartModel.showLegend,
+                      displayRange: chartModel.displayRange,
+                      showTimeControls: chartModel.showTimeControls,
+                      triggerEnabled: chartModel.triggerEnabled,
+                      upperThreshold: chartModel.upperThreshold,
+                      lowerThreshold: chartModel.lowerThreshold,
+                      lineThickness: chartModel.lineThickness,
+                      showDataPoints: chartModel.showDataPoints,
+                      pointRadius: chartModel.pointRadius,
+                      showLines: value,
+                      size: chartModel.size,
+                      position: chartModel.position,
+                    );
+                  });
+                  setModalState(() {});
+                },
+              ),
+            ),
+            
+            // Punkt-Radius (nur wenn Datenpunkte angezeigt werden)
+            if (chartModel.showDataPoints) ...[
+              const Divider(),
+              ListTile(
+                title: const Text('Punkt-Größe'),
+                subtitle: Text('${chartModel.pointRadius.toStringAsFixed(1)} Pixel'),
+                trailing: SizedBox(
+                  width: 200,
+                  child: Slider(
+                    value: chartModel.pointRadius,
+                    min: 0.5,
+                    max: 5.0,
+                    divisions: 9,
+                    onChanged: (value) {
+                      setState(() {
+                        openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                          id: chartModel.id,
+                          title: chartModel.title,
+                          showGrid: chartModel.showGrid,
+                          showLegend: chartModel.showLegend,
+                          displayRange: chartModel.displayRange,
+                          showTimeControls: chartModel.showTimeControls,
+                          triggerEnabled: chartModel.triggerEnabled,
+                          upperThreshold: chartModel.upperThreshold,
+                          lowerThreshold: chartModel.lowerThreshold,
+                          lineThickness: chartModel.lineThickness,
+                          showDataPoints: chartModel.showDataPoints,
+                          pointRadius: value,
+                          size: chartModel.size,
+                          position: chartModel.position,
+                        );
+                      });
+                      setModalState(() {});
+                    },
+                  ),
+                ),
+              ),
+            ],
+            const Divider(),
 
             ListTile(
               title: const Text('Trigger-Linien aktivieren'),
@@ -5734,6 +5915,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                           upperThreshold: result,
                           lowerThreshold: chartModel.lowerThreshold,
                           lineThickness: chartModel.lineThickness,
+                          showDataPoints: chartModel.showDataPoints,
+                          pointRadius: chartModel.pointRadius,
                           size: chartModel.size,
                           position: chartModel.position,
                         );
@@ -5794,6 +5977,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                           upperThreshold: chartModel.upperThreshold,
                           lowerThreshold: result,
                           lineThickness: chartModel.lineThickness,
+                          showDataPoints: chartModel.showDataPoints,
+                          pointRadius: chartModel.pointRadius,
                           size: chartModel.size,
                           position: chartModel.position,
                         );
@@ -5844,6 +6029,233 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
           child: Text('Unbekannter Widget-Typ'),
         );
     }
+  }
+
+  void _showChartSettings(int tabIndex, int widgetIndex, ChartWidgetModel chartModel) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            // Lokale Kopien für den Dialog
+            bool showDataPoints = chartModel.showDataPoints;
+            double pointRadius = chartModel.pointRadius;
+            double lineThickness = chartModel.lineThickness;
+            bool showGrid = chartModel.showGrid;
+            
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.5,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF2F2F7),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // Handle
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[400],
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Abbrechen'),
+                        ),
+                        Text(
+                          'Chart-Einstellungen',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            // Update the model
+                            setState(() {
+                              openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                id: chartModel.id,
+                                title: chartModel.title,
+                                displayRange: chartModel.displayRange,
+                                showTimeControls: chartModel.showTimeControls,
+                                showGrid: showGrid,
+                                showLegend: chartModel.showLegend,
+                                triggerEnabled: chartModel.triggerEnabled,
+                                upperThreshold: chartModel.upperThreshold,
+                                lowerThreshold: chartModel.lowerThreshold,
+                                lineThickness: lineThickness,
+                                showDataPoints: showDataPoints,
+                                pointRadius: pointRadius,
+                                size: chartModel.size,
+                                position: chartModel.position,
+                              );
+                            });
+                            Navigator.pop(context);
+                          },
+                          child: const Text('Fertig'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(),
+                  // Settings
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        // Datenpunkte anzeigen
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.scatter_plot, color: CupertinoColors.systemBlue),
+                                  const SizedBox(width: 12),
+                                  Text('Datenpunkte anzeigen', style: TextStyle(fontSize: 16)),
+                                ],
+                              ),
+                              CupertinoSwitch(
+                                value: showDataPoints,
+                                onChanged: (value) {
+                                  setModalState(() {
+                                    showDataPoints = value;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        // Punkt-Radius (nur wenn Punkte angezeigt werden)
+                        if (showDataPoints) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.circle, color: CupertinoColors.systemBlue),
+                                    const SizedBox(width: 12),
+                                    Text('Punkt-Größe', style: TextStyle(fontSize: 16)),
+                                    const Spacer(),
+                                    Text('${pointRadius.toStringAsFixed(1)}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                CupertinoSlider(
+                                  value: pointRadius,
+                                  min: 0.5,
+                                  max: 5.0,
+                                  divisions: 9,
+                                  onChanged: (value) {
+                                    setModalState(() {
+                                      pointRadius = value;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        
+                        // Linien-Dicke
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.line_weight, color: CupertinoColors.systemBlue),
+                                  const SizedBox(width: 12),
+                                  Text('Linien-Dicke', style: TextStyle(fontSize: 16)),
+                                  const Spacer(),
+                                  Text('${lineThickness.toStringAsFixed(1)}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              CupertinoSlider(
+                                value: lineThickness,
+                                min: 0.5,
+                                max: 5.0,
+                                divisions: 9,
+                                onChanged: (value) {
+                                  setModalState(() {
+                                    lineThickness = value;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        // Grid anzeigen
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.grid_on, color: CupertinoColors.systemBlue),
+                                  const SizedBox(width: 12),
+                                  Text('Gitter anzeigen', style: TextStyle(fontSize: 16)),
+                                ],
+                              ),
+                              CupertinoSwitch(
+                                value: showGrid,
+                                onChanged: (value) {
+                                  setModalState(() {
+                                    showGrid = value;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _showEditWorkspaceScreen() async {
@@ -6119,7 +6531,14 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
 
       switch (template.type) {
         case 'chart':
-          newWidget = ChartWidgetModel(id: id, title: template.title, lineThickness: 2.0);
+          newWidget = ChartWidgetModel(
+            id: id, 
+            title: template.title, 
+            lineThickness: 2.0,
+            showDataPoints: false,
+            pointRadius: 2.0,
+            showLines: true,
+          );
           break;
         case 'statistics':
           newWidget = StatisticsWidgetModel(id: id, title: template.title);
@@ -6266,6 +6685,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   // Frequenzanalyse
   double dominantFreqX = 0, dominantFreqY = 0;
+  
+  // Datenpunkt-Zähler für Debug
+  int _dataPointCounter = 0;
+  int _chartPointCounter = 0; // Zähler für Punkte die im Chart landen
+  Timer? _dataCountTimer;
+  DateTime _dataCountStartTime = DateTime.now();
+  
+  // Für kontinuierliche Zeitstempel
+  DateTime? _lastSampleTimestamp;
 
   // Stream Controller für Kalibrierungs-Updates
   final StreamController<CalibrationUpdate> _calibrationStreamController = StreamController<CalibrationUpdate>.broadcast();
@@ -6402,6 +6830,28 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         }
       }
     });
+    
+    // Starte den Datenpunkt-Zähler Timer
+    _dataCountTimer = Timer.periodic(Duration(seconds: 30), (timer) {
+      final now = DateTime.now();
+      final duration = now.difference(_dataCountStartTime);
+      final dataRate = duration.inSeconds > 0 ? _dataPointCounter / duration.inSeconds : 0;
+      final chartRate = duration.inSeconds > 0 ? _chartPointCounter / duration.inSeconds : 0;
+      final displayPercentage = _dataPointCounter > 0 ? (_chartPointCounter / _dataPointCounter * 100) : 0;
+      
+      print('=== DATENRATE STATISTIK ===');
+      print('Empfangene Datenpunkte: $_dataPointCounter');
+      print('Aktuell im Chart-Buffer: $_chartPointCounter Punkte');
+      print('Zeitraum: ${duration.inSeconds} Sekunden');
+      print('Datenrate empfangen: ${dataRate.toStringAsFixed(1)} Punkte/Sekunde');
+      print('Sichtbare Punkte im Buffer: $_chartPointCounter');
+      print('==========================');
+      
+      // Reset für nächste Periode
+      _dataPointCounter = 0;
+      // _chartPointCounter nicht zurücksetzen, da es die aktuelle Buffer-Größe ist
+      _dataCountStartTime = now;
+    });
   }
 
   // Methods for persistent storage of PID values
@@ -6474,6 +6924,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _autoScanTimer?.cancel();
     _uiUpdateTimer?.cancel();  // Stoppe UI Update Timer
     _chartUpdateTimer?.cancel();
+    _dataCountTimer?.cancel(); // Stoppe Datenzähler Timer
     scanSubscription?.cancel();
     connectionSubscription?.cancel();
     statusSubscription?.cancel();
@@ -6838,6 +7289,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
       // NEU: Erstellen Sie eine temporäre Liste für das Paket
       List<SensorReading> packetReadings = [];
+      
+      // Berechne die Zeit zwischen den Samples basierend auf der Loop-Frequenz
+      final double timeBetweenSamples = parsedLoopFreq > 0 ? 1000.0 / parsedLoopFreq : 1.0; // in Millisekunden
+      
+      // Initialisiere den letzten Timestamp wenn noch nicht vorhanden
+      _lastSampleTimestamp ??= DateTime.now();
+      
+      // Berechne den Startzeit für dieses Paket basierend auf dem letzten Sample
+      // Füge einen kleinen Buffer hinzu um Überschneidungen zu vermeiden
+      DateTime currentTimestamp = _lastSampleTimestamp!.add(Duration(microseconds: (timeBetweenSamples * 1000).round()));
 
       for (int i = 0; i < sampleCount; i++) {
         // Stelle sicher, dass wir nicht über das Ende der Daten hinauslesen
@@ -6861,7 +7322,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           }
 
           final reading = SensorReading(
-            timestamp: DateTime.now(), // Zeitstempel bei Empfang
+            timestamp: currentTimestamp,
             x: parsedX,
             y: parsedY,
             duty1: 0, // Duty-Cycle wird im neuen Paket nicht mehr gesendet
@@ -6872,12 +7333,21 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           if (isRecording) {
             packetReadings.add(reading);
           }
+          
+          // Inkrementiere den Timestamp für das nächste Sample
+          currentTimestamp = currentTimestamp.add(Duration(microseconds: (timeBetweenSamples * 1000).round()));
         }
+      }
+      
+      // Speichere den letzten Timestamp für das nächste Paket
+      if (packetReadings.isNotEmpty) {
+        _lastSampleTimestamp = packetReadings.last.timestamp;
       }
 
       // SENDEN SIE DIE GANZE LISTE AUF EINMAL
       if (isRecording && packetReadings.isNotEmpty) {
         _sensorDataManager.addReadings(packetReadings);
+        _dataPointCounter += packetReadings.length; // Zähle die empfangenen Datenpunkte
       }
       // Statistiken im Isolate nur noch alle 500ms berechnen statt bei jedem Paket
       final now = DateTime.now();
@@ -6931,6 +7401,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         if (isRecording) {
           // Für alte Einzelpakete: Sende als Liste mit einem Element
           _sensorDataManager.addReadings([reading]);
+          _dataPointCounter++; // Zähle den empfangenen Datenpunkt
         }
         // Alte Einzelpaket-Verarbeitung: Keine separaten Statistiken hier
         // Die werden zentral oben im Container-Code behandelt
@@ -10350,6 +10821,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 onRecordingChanged: (value) {
                   setState(() {
                     isRecording = value;
+                    // Reset timestamp wenn Recording neu gestartet wird
+                    if (value) {
+                      _lastSampleTimestamp = null;
+                    }
                   });
                 },
                 displayHistoryLength: _displayHistoryLength,
