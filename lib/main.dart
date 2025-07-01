@@ -11,14 +11,57 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui';
 
 // App Version
 const String APP_VERSION = "v13.0";
+
+// ========== ZENTRALE DATENVERWALTUNG FÜR MAXIMALE PERFORMANCE ==========
+class SensorDataManager {
+  // Die Haupt-History für Snapshots, maximal 50.000 Einträge
+  final Queue<SensorReading> _fullHistory = ListQueue(50000);
+
+  // Der öffentliche Stream, den Widgets abonnieren können - jetzt mit Paketen!
+  final StreamController<List<SensorReading>> _streamController = StreamController<List<SensorReading>>.broadcast();
+  Stream<List<SensorReading>> get stream => _streamController.stream;
+
+  // Gibt eine unveränderliche Kopie der gesamten Historie zurück
+  List<SensorReading> get history => List.unmodifiable(_fullHistory);
+
+  // Diese Methode wird von BLE aufgerufen, um neue Daten hinzuzufügen - jetzt als Paket!
+  void addReadings(List<SensorReading> readings) {
+    for (var reading in readings) {
+      if (_fullHistory.length >= 50000) {
+        _fullHistory.removeFirst();
+      }
+      _fullHistory.add(reading);
+    }
+    _streamController.add(readings); // Sendet das ganze Paket an alle Live-Listener
+  }
+
+  // Eine schnelle Methode, um Daten für ein bestimmtes Zeitfenster zu erhalten
+  List<SensorReading> getRecentData(Duration duration) {
+    if (_fullHistory.isEmpty) return [];
+
+    final cutoffTime = DateTime.now().subtract(duration);
+    // Verwendet die eingebaute, schnelle "where" Methode von Queues/Iterables
+    return _fullHistory.where((r) => r.timestamp.isAfter(cutoffTime)).toList(growable: false);
+  }
+
+  void clear() {
+    _fullHistory.clear();
+  }
+
+  void dispose() {
+    _streamController.close();
+  }
+}
 
 // BLE UUIDs
 final Guid serviceUuid = Guid("19B10000-E8F2-537E-4F6C-D104768A1214");
@@ -532,10 +575,8 @@ class AnalysisTab {
         title: 'Sensor-Diagramm',
         lineThickness: 2.0,
         showTimeControls: true, // Aktiviere Zeitkontrollen standardmäßig für Live-Tabs
-      ),
-      StatisticsWidgetModel(
-        id: '${DateTime.now().millisecondsSinceEpoch + 1}',
-        title: 'Statistiken',
+        size: AnalysisWidgetSize.fullWidth, // 4x4 Größe
+        position: GridPosition(x: 0, y: 0), // Position oben links
       ),
     ];
   }
@@ -1192,161 +1233,204 @@ enum CalibUiState {
   error
 }
 
-// Optimiertes Chart Widget für bessere Performance
-class OptimizedChartWidget extends StatefulWidget {
-  final ChartWidgetModel model;
-  final List<SensorReading> data;
-  final bool isSmall;
-  final bool isRecording;
-  final Function(bool) onRecordingChanged;
-  final Function(ChartWidgetModel) onModelUpdate;
+// Ultra-schnelles Custom Paint Chart für Echtzeit-Daten
+class RealtimeChartPainter extends CustomPainter {
+  // Zurück zu List für Stabilität
+  final List<SensorReading> visibleData;
+  final int displayRange;
+  final bool showGrid;
+  final double lineThickness;
 
-  const OptimizedChartWidget({
+  RealtimeChartPainter({
+    required this.visibleData,
+    required this.displayRange,
+    required this.showGrid,
+    required this.lineThickness,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // DIE GANZE FILTER-LOGIK WIRD HIER ENTFERNT!
+    // Die Daten sind bereits vom Stream-Listener perfekt gefiltert!
+    if (visibleData.isEmpty) return;
+
+    // Die älteste Zeit in den sichtbaren Daten als Startzeit verwenden
+    final startTime = visibleData.first.timestamp;
+
+    // Min/Max für Skalierung
+    double minVal = double.infinity, maxVal = -double.infinity;
+
+    for (var reading in visibleData) {
+      minVal = math.min(minVal, math.min(reading.x, reading.y));
+      maxVal = math.max(maxVal, math.max(reading.x, reading.y));
+    }
+
+    if (minVal == maxVal) {
+      minVal -= 1;
+      maxVal += 1;
+    }
+
+    final range = maxVal - minVal;
+    final padding = range * 0.1;
+    minVal -= padding;
+    maxVal += padding;
+
+    // Grid
+    if (showGrid) {
+      final gridPaint = Paint()
+        ..color = CupertinoColors.systemGrey4.withOpacity(0.3)
+        ..strokeWidth = 1;
+
+      for (int i = 1; i < 5; i++) {
+        final y = size.height * i / 5;
+        canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+        final x = size.width * i / 5;
+        canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+      }
+    }
+
+    // X-Achse zeichnen (rot)
+    final xPath = Path();
+    final xPaint = Paint()
+      ..color = CupertinoColors.systemRed
+      ..strokeWidth = lineThickness
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Y-Achse zeichnen (blau)
+    final yPath = Path();
+    final yPaint = Paint()
+      ..color = CupertinoColors.activeBlue
+      ..strokeWidth = lineThickness
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Zurück zur Index-basierten Schleife für Stabilität
+    for (int i = 0; i < visibleData.length; i++) {
+      final reading = visibleData[i];
+      // Zeitdifferenz zur Startzeit der sichtbaren Daten berechnen
+      final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+      // X-Position basierend auf dem gesamten Zeitfenster skalieren
+      final x = (timeDiff / displayRange) * size.width;
+
+      // X-Achse
+      final xY = size.height - ((reading.x - minVal) / (maxVal - minVal)) * size.height;
+      if (i == 0) {
+        xPath.moveTo(x, xY);
+      } else {
+        xPath.lineTo(x, xY);
+      }
+
+      // Y-Achse
+      final yY = size.height - ((reading.y - minVal) / (maxVal - minVal)) * size.height;
+      if (i == 0) {
+        yPath.moveTo(x, yY);
+      } else {
+        yPath.lineTo(x, yY);
+      }
+    }
+
+    canvas.drawPath(xPath, xPaint);
+    canvas.drawPath(yPath, yPaint);
+  }
+
+  @override
+  bool shouldRepaint(RealtimeChartPainter oldDelegate) {
+    // Nur neu zeichnen, wenn sich die Daten tatsächlich geändert haben
+    return oldDelegate.visibleData != visibleData;
+  }
+}
+
+// Echtzeit-Chart Widget mit Stream - jetzt mit Paket-Verarbeitung!
+class RealtimeStreamChart extends StatefulWidget {
+  final ChartWidgetModel model;
+  final Stream<List<SensorReading>> dataStream; // Akzeptiert jetzt Listen
+  final bool isSmall;
+  final Function(ChartWidgetModel)? onModelUpdate; // NEU: Callback für Zeitfenster-Änderungen
+
+  const RealtimeStreamChart({
     Key? key,
     required this.model,
-    required this.data,
+    required this.dataStream,
     required this.isSmall,
-    required this.isRecording,
-    required this.onRecordingChanged,
-    required this.onModelUpdate,
+    this.onModelUpdate, // Optional
   }) : super(key: key);
 
   @override
-  State<OptimizedChartWidget> createState() => _OptimizedChartWidgetState();
+  State<RealtimeStreamChart> createState() => _RealtimeStreamChartState();
 }
 
-class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
-  Timer? _chartUpdateTimer;
-  List<SensorReading> _displayData = [];
-  DateTime _lastUpdate = DateTime.now();
+class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
+  // WICHTIG: List durch ListQueue ersetzen für maximale Performance beim Entfernen
+  final Queue<SensorReading> _buffer = ListQueue();
+  StreamSubscription<List<SensorReading>>? _subscription;
+  Timer? _uiUpdateTimer; // NEU: Timer für UI-Updates mit 60 FPS
+  bool _isPaused = false; // NEU: Zustand für Pause/Play
 
   @override
   void initState() {
     super.initState();
-    _updateDisplayData();
+    _subscribeToStream(); // Logik in eine eigene Methode ausgelagert
 
-    // Eigener Update-Timer nur für dieses Chart - Maximale Frequenz für ultra-kurze Zeitfenster
-    final updateInterval = widget.model.displayRange <= 1
-        ? 4   // 250 FPS für 1 Sekunde - absolute maximale Auflösung
-        : widget.model.displayRange <= 2
-        ? 6   // 166 FPS für 2 Sekunden
-        : widget.model.displayRange <= 5
-        ? 8   // 125 FPS für 5 Sekunden
-        : widget.model.displayRange <= 10
-        ? 16  // 60 FPS für kurze Zeitfenster
-        : widget.model.displayRange <= 30
-        ? 33  // 30 FPS für mittlere Zeitfenster
-        : 50; // 20 FPS für lange Zeitfenster
-
-    _chartUpdateTimer = Timer.periodic(Duration(milliseconds: updateInterval), (timer) {
+    // 60 FPS Timer für flüssige UI-Updates (16ms = ~60 FPS)
+    _uiUpdateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (mounted) {
-        _updateDisplayData();
+        setState(() {
+          // Dieser setState ist jetzt entkoppelt von der Datenrate
+          // und sorgt für flüssiges Neuzeichnen mit fester Framerate
+        });
       }
     });
   }
 
-  @override
-  void didUpdateWidget(OptimizedChartWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Update wenn sich die Daten oder der Anzeigebereich ändert
-    if (oldWidget.data != widget.data || oldWidget.model.displayRange != widget.model.displayRange) {
-      _updateDisplayData();
+  void _subscribeToStream() {
+    _subscription?.cancel(); // Erst alten Stream kündigen, falls vorhanden
+    // Hört jetzt auf List<SensorReading>
+    _subscription = widget.dataStream.listen((List<SensorReading> newReadings) {
+      if (!mounted || _isPaused) return; // Keine neuen Daten hinzufügen wenn pausiert
 
-      // Neustart des Timers mit angepasster Frequenz bei Änderung des Zeitfensters
-      if (oldWidget.model.displayRange != widget.model.displayRange) {
-        _chartUpdateTimer?.cancel();
+      // FÜGE ALLE NEUEN PUNKTE ZUM PUFFER HINZU
+      _buffer.addAll(newReadings);
 
-        final updateInterval = widget.model.displayRange <= 1
-            ? 4   // 250 FPS für 1 Sekunde
-            : widget.model.displayRange <= 2
-            ? 6   // 166 FPS für 2 Sekunden
-            : widget.model.displayRange <= 5
-            ? 8   // 125 FPS für 5 Sekunden
-            : widget.model.displayRange <= 10
-            ? 16  // 60 FPS für kurze Zeitfenster
-            : widget.model.displayRange <= 30
-            ? 33  // 30 FPS für mittlere Zeitfenster
-            : 50; // 20 FPS für lange Zeitfenster
-
-        _chartUpdateTimer = Timer.periodic(Duration(milliseconds: updateInterval), (timer) {
-          if (mounted) {
-            _updateDisplayData();
-          }
-        });
+      // ENTFERNE ALTE PUNKTE (wird jetzt nur noch einmal pro Paket aufgerufen)
+      if (newReadings.isNotEmpty) {
+        final cutoffTime = newReadings.last.timestamp.subtract(Duration(seconds: widget.model.displayRange));
+        while (_buffer.isNotEmpty && _buffer.first.timestamp.isBefore(cutoffTime)) {
+          _buffer.removeFirst();
+        }
       }
+    });
+  }
+
+  // *** HIER DIE NEUE METHODE EINFÜGEN ***
+  // Diese Methode wird aufgerufen, wenn sich das Widget (z.B. die displayRange) ändert
+  @override
+  void didUpdateWidget(RealtimeStreamChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Wenn sich die Datenquelle oder die Zeitspanne geändert hat, müssen wir reagieren
+    if (oldWidget.dataStream != widget.dataStream) {
+      _subscribeToStream(); // Stream neu abonnieren
+    }
+    // Wenn sich nur die Zeitspanne ändert, den Puffer einmalig anpassen
+    if (oldWidget.model.displayRange != widget.model.displayRange && _buffer.isNotEmpty) {
+      final now = DateTime.now();
+      final cutoffTime = now.subtract(Duration(seconds: widget.model.displayRange));
+      _buffer.removeWhere((reading) => reading.timestamp.isBefore(cutoffTime));
     }
   }
 
   @override
   void dispose() {
-    _chartUpdateTimer?.cancel();
+    _subscription?.cancel();
+    _uiUpdateTimer?.cancel(); // WICHTIG: Den UI-Update-Timer ebenfalls aufräumen
     super.dispose();
-  }
-
-  void _updateDisplayData() {
-    if (!mounted) return;
-
-    // Immer updaten für Echtzeit-Darstellung
-    setState(() {
-      final now = DateTime.now();
-      final startTime = now.subtract(Duration(seconds: widget.model.displayRange));
-
-      // Filtere Daten basierend auf Zeitfenster
-      _displayData = widget.data.where((reading) =>
-          reading.timestamp.isAfter(startTime)
-      ).toList();
-
-      _lastUpdate = now;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return _buildChartContent();
-  }
-
-  Widget _buildChartContent() {
-    if (_displayData.isEmpty) {
-      return Center(
-        child: Text(
-          'Keine Daten',
-          style: TextStyle(
-            color: CupertinoColors.systemGrey,
-            fontSize: widget.isSmall ? 10 : 12,
-          ),
-        ),
-      );
-    }
-
-    // Berechne den tatsächlichen X-Bereich für volle Nutzung
-    final now = DateTime.now();
-    final startTime = now.subtract(Duration(seconds: widget.model.displayRange));
-
-    double actualMinX = 0;
-    double actualMaxX = widget.model.displayRange.toDouble();
-
-    final spots = _displayData.map((reading) {
-      final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
-      return FlSpot(timeDiff, reading.y);
-    }).toList();
-
-    if (spots.isNotEmpty) {
-      actualMinX = spots.first.x;
-      actualMaxX = math.max(spots.last.x, actualMinX + 1);
-    }
-
-    // Berechne Min/Max für beide Achsen
-    final xSensorValues = _displayData.map((r) => r.x).toList();
-    final ySensorValues = _displayData.map((r) => r.y).toList();
-
-    final allValues = [...xSensorValues, ...ySensorValues];
-    final minValue = allValues.isNotEmpty ? allValues.reduce(math.min) : 0;
-    final maxValue = allValues.isNotEmpty ? allValues.reduce(math.max) : 100;
-    final padding = (maxValue - minValue) * 0.1;
-
     return Column(
       children: [
-        // Kontrollen für Zeitskala und Play/Pause
+        // Zeitfenster-Kontrollen (vollständig interaktiv)
         if (widget.model.showTimeControls) Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
@@ -1356,20 +1440,22 @@ class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
               PopupMenuButton<int>(
                 initialValue: widget.model.displayRange,
                 onSelected: (value) {
-                  widget.onModelUpdate(ChartWidgetModel(
-                    id: widget.model.id,
-                    title: widget.model.title,
-                    showGrid: widget.model.showGrid,
-                    showLegend: widget.model.showLegend,
-                    displayRange: value,
-                    showTimeControls: widget.model.showTimeControls,
-                    lineThickness: widget.model.lineThickness,
-                    triggerEnabled: widget.model.triggerEnabled,
-                    upperThreshold: widget.model.upperThreshold,
-                    lowerThreshold: widget.model.lowerThreshold,
-                    size: widget.model.size,
-                    position: widget.model.position,
-                  ));
+                  if (widget.onModelUpdate != null) {
+                    widget.onModelUpdate!(ChartWidgetModel(
+                      id: widget.model.id,
+                      title: widget.model.title,
+                      showGrid: widget.model.showGrid,
+                      showLegend: widget.model.showLegend,
+                      displayRange: value,
+                      showTimeControls: widget.model.showTimeControls,
+                      lineThickness: widget.model.lineThickness,
+                      triggerEnabled: widget.model.triggerEnabled,
+                      upperThreshold: widget.model.upperThreshold,
+                      lowerThreshold: widget.model.lowerThreshold,
+                      size: widget.model.size,
+                      position: widget.model.position,
+                    ));
+                  }
                 },
                 itemBuilder: (context) => [
                   PopupMenuItem(value: 1, child: Text('1 Sekunde')),
@@ -1406,24 +1492,198 @@ class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
                   ),
                 ),
               ),
-              // Play/Pause Button
+              // Pause/Play Button
               IconButton(
                 icon: Icon(
-                  widget.isRecording ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                  color: widget.isRecording ? CupertinoColors.systemOrange : CupertinoColors.systemGreen,
-                  size: 32,
+                  _isPaused ? Icons.play_arrow : Icons.pause,
+                  color: _isPaused ? CupertinoColors.activeGreen : CupertinoColors.systemOrange,
                 ),
-                onPressed: () => widget.onRecordingChanged(!widget.isRecording),
-                padding: EdgeInsets.zero,
-                constraints: BoxConstraints(),
+                onPressed: () {
+                  setState(() {
+                    _isPaused = !_isPaused;
+                  });
+                },
+                tooltip: _isPaused ? 'Fortsetzen' : 'Pausieren',
+              ),
+              // Echtzeit-Modus Anzeige
+              Row(
+                children: [
+                  Icon(
+                    _isPaused ? Icons.pause_circle_filled : Icons.flash_on, 
+                    color: _isPaused ? CupertinoColors.systemOrange : CupertinoColors.systemYellow, 
+                    size: 16
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _isPaused ? 'Pausiert' : 'Echtzeit',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ],
               ),
             ],
           ),
         ),
         if (widget.model.showTimeControls) const Divider(height: 1),
 
+        // Chart
+        Expanded(
+          child: RepaintBoundary(
+            child: CustomPaint(
+              painter: RealtimeChartPainter(
+                // Effiziente List-Erstellung aus Queue
+                visibleData: _buffer.toList(growable: false), // growable: false für bessere Performance
+                displayRange: widget.model.displayRange,
+                showGrid: widget.model.showGrid,
+                lineThickness: widget.model.lineThickness,
+              ),
+              size: Size.infinite,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// Optimiertes Chart Widget für bessere Performance - jetzt als StatelessWidget
+class OptimizedChartWidget extends StatelessWidget {
+  final ChartWidgetModel model;
+  final List<SensorReading> displayData; // Geändert: nimmt jetzt gefilterte Daten
+  final bool isSmall;
+  final bool isRecording;
+  final Function(bool) onRecordingChanged;
+  final Function(ChartWidgetModel) onModelUpdate;
+
+  const OptimizedChartWidget({
+    Key? key,
+    required this.model,
+    required this.displayData,
+    required this.isSmall,
+    required this.isRecording,
+    required this.onRecordingChanged,
+    required this.onModelUpdate,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    if (displayData.isEmpty) {
+      return Center(
+        child: Text(
+          'Keine Daten',
+          style: TextStyle(
+            color: CupertinoColors.systemGrey,
+            fontSize: isSmall ? 10 : 12,
+          ),
+        ),
+      );
+    }
+
+    // Berechne den tatsächlichen X-Bereich für volle Nutzung
+    final now = DateTime.now();
+    final startTime = now.subtract(Duration(seconds: model.displayRange));
+
+    double actualMinX = 0;
+    double actualMaxX = model.displayRange.toDouble();
+
+    final spots = displayData.map((reading) {
+      final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+      return FlSpot(timeDiff, reading.y);
+    }).toList();
+
+    if (spots.isNotEmpty) {
+      actualMinX = spots.first.x;
+      actualMaxX = math.max(spots.last.x, actualMinX + 1);
+    }
+
+    // Berechne Min/Max für beide Achsen
+    final xSensorValues = displayData.map((r) => r.x).toList();
+    final ySensorValues = displayData.map((r) => r.y).toList();
+
+    final allValues = [...xSensorValues, ...ySensorValues];
+    final minValue = allValues.isNotEmpty ? allValues.reduce(math.min) : 0;
+    final maxValue = allValues.isNotEmpty ? allValues.reduce(math.max) : 100;
+    final padding = (maxValue - minValue) * 0.1;
+
+    return Column(
+      children: [
+        // Kontrollen für Zeitskala und Play/Pause
+        if (model.showTimeControls) Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Zeitskala-Auswahl mit Popup
+              PopupMenuButton<int>(
+                initialValue: model.displayRange,
+                onSelected: (value) {
+                  onModelUpdate(ChartWidgetModel(
+                    id: model.id,
+                    title: model.title,
+                    showGrid: model.showGrid,
+                    showLegend: model.showLegend,
+                    displayRange: value,
+                    showTimeControls: model.showTimeControls,
+                    lineThickness: model.lineThickness,
+                    triggerEnabled: model.triggerEnabled,
+                    upperThreshold: model.upperThreshold,
+                    lowerThreshold: model.lowerThreshold,
+                    size: model.size,
+                    position: model.position,
+                  ));
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(value: 1, child: Text('1 Sekunde')),
+                  PopupMenuItem(value: 2, child: Text('2 Sekunden')),
+                  PopupMenuItem(value: 5, child: Text('5 Sekunden')),
+                  PopupMenuItem(value: 10, child: Text('10 Sekunden')),
+                  PopupMenuItem(value: 30, child: Text('30 Sekunden')),
+                  PopupMenuItem(value: 60, child: Text('1 Minute')),
+                  PopupMenuItem(value: 120, child: Text('2 Minuten')),
+                  PopupMenuItem(value: 300, child: Text('5 Minuten')),
+                ],
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: CupertinoColors.systemGrey4),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.access_time, size: 16, color: CupertinoColors.systemGrey),
+                      const SizedBox(width: 6),
+                      Text(
+                        model.displayRange == 1
+                            ? '1 Sekunde'
+                            : model.displayRange < 60
+                            ? '${model.displayRange} Sekunden'
+                            : '${model.displayRange ~/ 60} Min',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.arrow_drop_down, size: 18, color: CupertinoColors.systemGrey),
+                    ],
+                  ),
+                ),
+              ),
+              // Play/Pause Button
+              IconButton(
+                icon: Icon(
+                  isRecording ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                  color: isRecording ? CupertinoColors.systemOrange : CupertinoColors.systemGreen,
+                  size: 32,
+                ),
+                onPressed: () => onRecordingChanged(!isRecording),
+                padding: EdgeInsets.zero,
+                constraints: BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+        if (model.showTimeControls) const Divider(height: 1),
+
         // Legende (wenn aktiviert)
-        if (widget.model.showLegend && !widget.isSmall) Container(
+        if (model.showLegend && !isSmall) Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -1457,7 +1717,7 @@ class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
         Expanded(
           child: RepaintBoundary(
             child: Padding(
-              padding: EdgeInsets.all(widget.isSmall ? 8 : 16),
+              padding: EdgeInsets.all(isSmall ? 8 : 16),
               child: LineChart(
                 LineChartData(
                   clipData: FlClipData.all(),
@@ -1466,7 +1726,7 @@ class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
                   minY: minValue - padding,
                   maxY: maxValue + padding,
                   gridData: FlGridData(
-                    show: widget.model.showGrid,
+                    show: model.showGrid,
                     drawVerticalLine: true,
                     drawHorizontalLine: true,
                     horizontalInterval: (maxValue - minValue) / 5,
@@ -1485,10 +1745,10 @@ class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
                     },
                   ),
                   titlesData: FlTitlesData(
-                    show: !widget.isSmall,
+                    show: !isSmall,
                     leftTitles: AxisTitles(
                       sideTitles: SideTitles(
-                        showTitles: !widget.isSmall,
+                        showTitles: !isSmall,
                         reservedSize: 40,
                         interval: (maxValue - minValue) / 4,
                         getTitlesWidget: (value, meta) => Padding(
@@ -1506,12 +1766,12 @@ class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
                     ),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
-                        showTitles: !widget.isSmall,
+                        showTitles: !isSmall,
                         reservedSize: 30,
                         interval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 4 : (actualMaxX - actualMinX) / 5,
                         getTitlesWidget: (value, meta) {
                           // Zeige Zeitangaben relativ zur aktuellen Zeit
-                          final seconds = widget.model.displayRange - value;
+                          final seconds = model.displayRange - value;
                           String label;
                           if (seconds < 60) {
                             label = '-${seconds.toInt()}s';
@@ -1544,13 +1804,13 @@ class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
                   lineBarsData: [
                     // X-Achse Daten (rot)
                     LineChartBarData(
-                      spots: _displayData.map((reading) {
+                      spots: displayData.map((reading) {
                         final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
                         return FlSpot(timeDiff, reading.x.toDouble());
                       }).toList(),
                       isCurved: false,
                       color: CupertinoColors.systemRed,
-                      barWidth: widget.model.lineThickness,
+                      barWidth: model.lineThickness,
                       isStrokeCapRound: true,
                       dotData: FlDotData(show: false),
                       belowBarData: BarAreaData(show: false),
@@ -1560,7 +1820,7 @@ class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
                       spots: spots,
                       isCurved: false,
                       color: CupertinoColors.activeBlue,
-                      barWidth: widget.model.lineThickness,
+                      barWidth: model.lineThickness,
                       isStrokeCapRound: true,
                       dotData: FlDotData(show: false),
                       belowBarData: BarAreaData(show: false),
@@ -1580,7 +1840,7 @@ class _OptimizedChartWidgetState extends State<OptimizedChartWidget> {
 
 // NEU: Dynamische Analyse-Workspace-Seite
 class AnalysisWorkspacePage extends StatefulWidget {
-  final List<SensorReading> sensorHistory;
+  final SensorDataManager sensorDataManager;
   final bool isRecording;
   final Function(bool) onRecordingChanged;
   final int displayHistoryLength;
@@ -1591,7 +1851,7 @@ class AnalysisWorkspacePage extends StatefulWidget {
 
   const AnalysisWorkspacePage({
     Key? key,
-    required this.sensorHistory,
+    required this.sensorDataManager,
     required this.isRecording,
     required this.onRecordingChanged,
     required this.displayHistoryLength,
@@ -1616,6 +1876,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
   int lastDuty1 = 0;
   int lastDuty2 = 0;
 
+  // ENTFERNT: Timer und _displayData - verursachten Performance-Probleme
+
   @override
   bool get wantKeepAlive => true;
 
@@ -1627,7 +1889,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       AnalysisTab(
         title: 'Live-Stream',
         isLive: true,
-        data: widget.sensorHistory,
+        data: widget.sensorDataManager.history,
       ),
     ];
 
@@ -1665,12 +1927,18 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
         });
       }
     });
+
+    // ENTFERNT: Langsamer UI-Update-Timer, der Performance-Probleme verursachte
   }
+
+  // ENTFERNT: _updateAndFilterData Methode - verursachte 60x pro Sekunde Filterung
+  // von bis zu 50.000 Datenpunkten und damit massive Performance-Probleme
 
   @override
   void dispose() {
     _scrollController.dispose();
     _autoScrollTimer?.cancel();
+    // ENTFERNT: _uiUpdateTimer?.cancel() - Timer existiert nicht mehr
     super.dispose();
   }
 
@@ -1679,7 +1947,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     final title = 'Snapshot ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
 
     // Erstelle eine echte Kopie der Daten
-    final snapshotData = List<SensorReading>.from(widget.sensorHistory);
+    final snapshotData = List<SensorReading>.from(widget.sensorDataManager.history);
 
     setState(() {
       openTabs.add(AnalysisTab(
@@ -2234,7 +2502,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                     : _buildWidgetGrid(
                   widgets: activeTab.widgets,
                   tabIndex: activeTabIndex,
-                  data: activeTab.isLive ? this.widget.sensorHistory : activeTab.data,
+                  data: activeTab.isLive ? this.widget.sensorDataManager.history : activeTab.data,
                   isEditMode: activeTab.isEditMode,
                 ),
 
@@ -3463,27 +3731,56 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
   }
 
   Widget _buildChartContent(ChartWidgetModel model, List<SensorReading> data, bool isSmall) {
-    // Verwende das optimierte Chart Widget für bessere Performance
-    return OptimizedChartWidget(
-      model: model,
-      data: data,
-      isSmall: isSmall,
-      isRecording: widget.isRecording,
-      onRecordingChanged: widget.onRecordingChanged,
-      onModelUpdate: (updatedModel) {
-        // Update das Model im Tab
-        setState(() {
-          for (int i = 0; i < openTabs.length; i++) {
-            for (int j = 0; j < openTabs[i].widgets.length; j++) {
-              if (openTabs[i].widgets[j].id == updatedModel.id) {
-                openTabs[i].widgets[j] = updatedModel;
-                return;
+    final activeTab = openTabs[activeTabIndex];
+
+    // ### DIE LOGIK ###
+    // Ist der Tab "live"?
+    if (activeTab.isLive) {
+      // JA -> Benutze IMMER das ultra-schnelle Stream-Chart.
+      final homePageState = context.findAncestorStateOfType<_HomePageState>();
+      if (homePageState != null) {
+        return RealtimeStreamChart(
+          model: model,
+          dataStream: homePageState._sensorDataManager.stream, // Direkt an den schnellen Datenstrom anschließen
+          isSmall: isSmall,
+          onModelUpdate: (updatedModel) {
+            setState(() {
+              for (int i = 0; i < openTabs.length; i++) {
+                for (int j = 0; j < openTabs[i].widgets.length; j++) {
+                  if (openTabs[i].widgets[j].id == updatedModel.id) {
+                    openTabs[i].widgets[j] = updatedModel;
+                    return;
+                  }
+                }
+              }
+            });
+          },
+        );
+      }
+      // Fallback, falls der State nicht gefunden wird (sollte nicht passieren)
+      return const Center(child: Text("Live-Datenstrom nicht verfügbar"));
+    } else {
+      // NEIN -> Es ist ein Snapshot. Benutze das alte Chart, da die Daten statisch sind.
+      return OptimizedChartWidget(
+        model: model,
+        displayData: data, // Hier werden die statischen Snapshot-Daten verwendet
+        isSmall: isSmall,
+        isRecording: widget.isRecording, // Ist hier irrelevant, aber wird erwartet
+        onRecordingChanged: widget.onRecordingChanged,
+        onModelUpdate: (updatedModel) {
+          setState(() {
+            for (int i = 0; i < openTabs.length; i++) {
+              for (int j = 0; j < openTabs[i].widgets.length; j++) {
+                if (openTabs[i].widgets[j].id == updatedModel.id) {
+                  openTabs[i].widgets[j] = updatedModel;
+                  return;
+                }
               }
             }
-          }
-        });
-      },
-    );
+          });
+        },
+      );
+    }
   }
 
   Widget _buildChartContentOld(ChartWidgetModel model, List<SensorReading> data, bool isSmall) {
@@ -3510,7 +3807,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     ).toList();
 
     // Trigger-Überprüfung: Stoppe Aufnahme wenn Schwellenwert überschritten
-    if (model.triggerEnabled && this.widget.isRecording && recentData.isNotEmpty) {
+    if (model.triggerEnabled && widget.isRecording && recentData.isNotEmpty) {
       final lastReading = recentData.last;
       bool triggerExceeded = false;
 
@@ -3527,7 +3824,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       if (triggerExceeded) {
         // Stoppe die Aufnahme
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          this.widget.onRecordingChanged(false);
+          widget.onRecordingChanged(false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Aufnahme gestoppt: Trigger-Schwellenwert überschritten'),
@@ -3657,11 +3954,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
               // Play/Pause Button
               IconButton(
                 icon: Icon(
-                  this.widget.isRecording ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                  color: this.widget.isRecording ? CupertinoColors.systemOrange : CupertinoColors.systemGreen,
+                  widget.isRecording ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                  color: widget.isRecording ? CupertinoColors.systemOrange : CupertinoColors.systemGreen,
                   size: 32,
                 ),
-                onPressed: () => this.widget.onRecordingChanged(!this.widget.isRecording),
+                onPressed: () => widget.onRecordingChanged(!widget.isRecording),
                 padding: EdgeInsets.zero,
                 constraints: BoxConstraints(),
               ),
@@ -5939,9 +6236,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   // Tab Controller
   late TabController _tabController;
 
-  // Sensor-Datenerfassung
-  final List<SensorReading> sensorHistory = [];
-  final int maxHistoryLength = 50000;  // Genug für 5+ Minuten bei hoher Abtastrate
+  // Sensor-Datenerfassung - NEUE ZENTRALE VERWALTUNG
+  final SensorDataManager _sensorDataManager = SensorDataManager();
   int _displayHistoryLength = 500;     // Anzahl der angezeigten Datenpunkte
   bool isRecording = true;
 
@@ -5955,9 +6251,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   DateTime _lastStatisticsUpdate = DateTime.now();
   static const int _maxBufferSize = 1; // Minimale Puffergröße - praktisch kein Puffer
   static const int _chartUpdateIntervalMs = 4; // 250 FPS für absolute maximale Auflösung
-  
-  // Stream für Echtzeit-Daten ohne setState!
-  final StreamController<SensorReading> _realtimeDataStream = StreamController<SensorReading>.broadcast();
+
+  // Stream für Echtzeit-Daten jetzt im SensorDataManager
+
+  // NEU: Isolate für Statistik-Berechnungen
+  Isolate? _statisticsIsolate;
+  final ReceivePort _receivePort = ReceivePort();
+  SendPort? _sendPort;
 
   // Statistiken
   double xMin = 0, xMax = 0, xAvg = 0, xStdDev = 0;
@@ -6037,17 +6337,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _loadPidValues(); // Load saved PID values
     _initBluetooth();
 
+    // NEU: Isolate für Statistik-Berechnungen starten
+    _startStatisticsIsolate();
+
     // Entfernt: Globaler UI Update Timer wird nicht mehr benötigt
     // Stattdessen verwenden wir gezielte Updates für spezifische Widgets
 
-    // Chart-Update Timer für periodische UI Updates
-    _chartUpdateTimer = Timer.periodic(Duration(milliseconds: 33), (timer) { // 30 FPS
-      if (mounted && _tabController.index == 2) { // Nur wenn Analyse-Tab aktiv
-        setState(() {
-          // Trigger UI update
-        });
-      }
-    });
+    // Kein globaler Chart-Update Timer mehr nötig!
+    // RealtimeStreamChart updated sich selbst über den Stream
   }
 
   Future<void> _initBluetooth() async {
@@ -6071,6 +6368,39 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     Future.delayed(const Duration(seconds: 1), () {
       startContinuousScan();
+    });
+  }
+
+  // NEU: Methode zum Starten und zur Kommunikation mit dem Isolate
+  Future<void> _startStatisticsIsolate() async {
+    _statisticsIsolate = await Isolate.spawn(statisticsIsolateEntry, _receivePort.sendPort);
+
+    _receivePort.listen((dynamic data) {
+      if (data is SendPort) {
+        // Speichere den SendPort des Isolates, damit wir ihm Daten schicken können
+        _sendPort = data;
+      } else if (data is Map<String, dynamic>) {
+        // Wir haben ein Ergebnis (Statistiken) vom Isolate erhalten
+        if (mounted) {
+          setState(() {
+            // Aktualisiere die UI-Variablen mit den berechneten Werten
+            xMin = data['xMin'] ?? xMin;
+            xMax = data['xMax'] ?? xMax;
+            xAvg = data['xAvg'] ?? xAvg;
+            xStdDev = data['xStdDev'] ?? xStdDev;
+            noiseX = data['noiseX'] ?? noiseX;
+
+            yMin = data['yMin'] ?? yMin;
+            yMax = data['yMax'] ?? yMax;
+            yAvg = data['yAvg'] ?? yAvg;
+            yStdDev = data['yStdDev'] ?? yStdDev;
+            noiseY = data['noiseY'] ?? noiseY;
+
+            dominantFreqX = data['dominantFreqX'] ?? dominantFreqX;
+            dominantFreqY = data['dominantFreqY'] ?? dominantFreqY;
+          });
+        }
+      }
     });
   }
 
@@ -6151,6 +6481,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     adapterSubscription?.cancel();
     _tabController.dispose();
     _calibrationStreamController.close();
+    _sensorDataManager.dispose();
+
+    // NEU: Isolate und Port sauber schließen
+    _statisticsIsolate?.kill(priority: Isolate.immediate);
+    _receivePort.close();
+    // Stream wird jetzt von _sensorDataManager.dispose() geschlossen
 
     kpXPosController.dispose();
     kiXPosController.dispose();
@@ -6500,6 +6836,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       // Wir starten das Auslesen der Samples nach dem Header (5 Bytes)
       int offset = 5;
 
+      // NEU: Erstellen Sie eine temporäre Liste für das Paket
+      List<SensorReading> packetReadings = [];
+
       for (int i = 0; i < sampleCount; i++) {
         // Stelle sicher, dass wir nicht über das Ende der Daten hinauslesen
         if (offset + 4 <= value.length) {
@@ -6529,22 +6868,26 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             duty2: 0,
           );
 
+          // Fügen Sie das Reading zur Paket-Liste hinzu
           if (isRecording) {
-            // Stream für Echtzeit ohne setState!
-            _realtimeDataStream.add(reading);
-            
-            // History für normale Anzeige
-            sensorHistory.add(reading);
-            if (sensorHistory.length > maxHistoryLength) {
-              sensorHistory.removeAt(0);
-            }
+            packetReadings.add(reading);
           }
         }
       }
-      // Statistiken nur noch alle 500ms berechnen statt bei jedem Paket
+
+      // SENDEN SIE DIE GANZE LISTE AUF EINMAL
+      if (isRecording && packetReadings.isNotEmpty) {
+        _sensorDataManager.addReadings(packetReadings);
+      }
+      // Statistiken im Isolate nur noch alle 500ms berechnen statt bei jedem Paket
       final now = DateTime.now();
-      if (now.difference(_lastStatisticsUpdate).inMilliseconds > 500) {
-        _calculateStatistics();
+      if (_sendPort != null && now.difference(_lastStatisticsUpdate).inMilliseconds > 500) {
+        // Schicke nur die letzten 500 Datenpunkte an den Isolate zur Verarbeitung
+        final recentHistory = _sensorDataManager.getRecentData(Duration(seconds: 10));
+
+        // Wichtig: Sende eine Kopie, da der Isolate keinen direkten Speicherzugriff hat
+        _sendPort!.send(List<SensorReading>.from(recentHistory));
+
         _lastStatisticsUpdate = now;
       }
 
@@ -6586,16 +6929,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         );
 
         if (isRecording) {
-          // Stream für Echtzeit ohne setState!
-          _realtimeDataStream.add(reading);
-          
-          // History für normale Anzeige
-          sensorHistory.add(reading);
-          if (sensorHistory.length > maxHistoryLength) {
-            sensorHistory.removeAt(0);
-          }
+          // Für alte Einzelpakete: Sende als Liste mit einem Element
+          _sensorDataManager.addReadings([reading]);
         }
-        _calculateStatistics();
+        // Alte Einzelpaket-Verarbeitung: Keine separaten Statistiken hier
+        // Die werden zentral oben im Container-Code behandelt
       } catch (e) {
         print("Parse error in processStatusData: $e");
       }
@@ -7073,130 +7411,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return 1;
   }
 
-  void _calculateStatistics() {
-    if (sensorHistory.length < 10) return;
-
-    List<double> xValues = sensorHistory.map((r) => r.x).toList();
-    xMin = xValues.reduce(math.min);
-    xMax = xValues.reduce(math.max);
-    xAvg = xValues.reduce((a, b) => a + b) / xValues.length;
-
-    // Verbesserte Rauschberechnung nach TMAG5273 Datenblatt
-    // RMS-Rauschen mit Moving Window für bessere Genauigkeit
-    noiseX = _calculateRMSNoise(xValues, xAvg);
-    xStdDev = noiseX; // Für Kompatibilität
-
-    List<double> yValues = sensorHistory.map((r) => r.y).toList();
-    yMin = yValues.reduce(math.min);
-    yMax = yValues.reduce(math.max);
-    yAvg = yValues.reduce((a, b) => a + b) / yValues.length;
-
-    // Verbesserte Rauschberechnung nach TMAG5273 Datenblatt
-    noiseY = _calculateRMSNoise(yValues, yAvg);
-    yStdDev = noiseY; // Für Kompatibilität
-
-    _estimateFrequency();
-  }
-
-  // Neue Methode für RMS-Rauschberechnung nach Datenblatt
-  double _calculateRMSNoise(List<double> values, double mean) {
-    if (values.length < 20) {
-      // Zu wenige Samples für genaue Berechnung
-      return _calculateSimpleStdDev(values, mean);
-    }
-
-    // Detrending: Entferne linearen Trend für genauere Rauschmessung
-    List<double> detrended = _detrendData(values);
-
-    // Berechne RMS des detrendierten Signals
-    double sumSquares = 0;
-    for (double val in detrended) {
-      sumSquares += val * val;
-    }
-    double rms = math.sqrt(sumSquares / detrended.length);
-
-    // Optional: Hochfrequenz-Filterung für echtes Sensorrauschen
-    // (entfernt niederfrequente Störungen < 10 Hz)
-    if (values.length > 100) {
-      return _filterHighFrequencyNoise(values, rms);
-    }
-
-    return rms;
-  }
-
-  // Hilfsmethode: Einfache Standardabweichung
-  double _calculateSimpleStdDev(List<double> values, double mean) {
-    double variance = 0;
-    for (double val in values) {
-      variance += math.pow(val - mean, 2);
-    }
-    return math.sqrt(variance / values.length);
-  }
-
-  // Hilfsmethode: Linearen Trend entfernen
-  List<double> _detrendData(List<double> values) {
-    int n = values.length;
-    double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-
-    for (int i = 0; i < n; i++) {
-      sumX += i;
-      sumY += values[i];
-      sumXY += i * values[i];
-      sumX2 += i * i;
-    }
-
-    // Lineare Regression: y = slope * x + intercept
-    double slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    double intercept = (sumY - slope * sumX) / n;
-
-    // Trend subtrahieren
-    List<double> detrended = [];
-    for (int i = 0; i < n; i++) {
-      detrended.add(values[i] - (slope * i + intercept));
-    }
-
-    return detrended;
-  }
-
-  // Hilfsmethode: Hochfrequenz-Rauschen filtern (> 10 Hz)
-  double _filterHighFrequencyNoise(List<double> values, double baseRMS) {
-    // Differenzen-Methode für Hochfrequenz-Komponenten
-    double diffSum = 0;
-    int count = 0;
-
-    for (int i = 1; i < values.length; i++) {
-      double diff = values[i] - values[i-1];
-      diffSum += diff * diff;
-      count++;
-    }
-
-    // Skalierung für 600 Hz Abtastrate
-    double highFreqRMS = math.sqrt(diffSum / count) / math.sqrt(2);
-
-    // Kombiniere mit Basis-RMS, gewichte Hochfrequenz stärker
-    return math.sqrt(baseRMS * baseRMS * 0.3 + highFreqRMS * highFreqRMS * 0.7);
-  }
-
-  void _estimateFrequency() {
-    if (sensorHistory.length < 50) return;
-
-    int xCrossings = 0;
-    int yCrossings = 0;
-
-    for (int i = 1; i < sensorHistory.length; i++) {
-      if ((sensorHistory[i-1].x - xAvg) * (sensorHistory[i].x - xAvg) < 0) {
-        xCrossings++;
-      }
-      if ((sensorHistory[i-1].y - yAvg) * (sensorHistory[i].y - yAvg) < 0) {
-        yCrossings++;
-      }
-    }
-
-    double timeSpan = sensorHistory.last.timestamp.difference(sensorHistory.first.timestamp).inMilliseconds / 1000.0;
-
-    dominantFreqX = (xCrossings / 2.0) / timeSpan;
-    dominantFreqY = (yCrossings / 2.0) / timeSpan;
-  }
+  // ENTFERNT: Alle Statistik-Methoden wurden in den Isolate ausgelagert
+  // _calculateStatistics, _calculateRMSNoise, _calculateSimpleStdDev,
+  // _detrendData, _filterHighFrequencyNoise, _estimateFrequency
+  // sind jetzt als Top-Level-Funktionen am Ende der Datei verfügbar
 
   // Sende Kalibrierungs-Update über Stream
   void _sendCalibrationUpdate() {
@@ -7321,14 +7539,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void exportSensorDataToCSV() async {
-    if (sensorHistory.isEmpty) {
+    if (_sensorDataManager.history.isEmpty) {
       showError('Keine Daten zum Exportieren vorhanden');
       return;
     }
 
     // Erstelle CSV-Daten
     String csv = 'Timestamp,X (mT),Y (mT),Duty1,Duty2\n';
-    for (var reading in sensorHistory) {
+    for (var reading in _sensorDataManager.history) {
       csv += '${reading.timestamp.toIso8601String()},${reading.x},${reading.y},${reading.duty1},${reading.duty2}\n';
     }
 
@@ -8488,7 +8706,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               child: OutlinedButton.icon(
                 onPressed: () {
                   setState(() {
-                    sensorHistory.clear();
+                    _sensorDataManager.clear();
                     xMin = xMax = xAvg = xStdDev = 0;
                     yMin = yMax = yAvg = yStdDev = 0;
                     noiseX = noiseY = 0;
@@ -8508,7 +8726,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             const SizedBox(width: 12),
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: sensorHistory.isEmpty ? null : _exportToCSV,
+                onPressed: _sensorDataManager.history.isEmpty ? null : _exportToCSV,
                 icon: const Icon(Icons.file_download, size: 20),
                 label: const Text('Export'),
                 style: ElevatedButton.styleFrom(
@@ -8645,7 +8863,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               fontWeight: FontWeight.bold,
             ),
           ),
-          subtitle: sensorHistory.length > 10
+          subtitle: _sensorDataManager.history.length > 10
               ? Text(
             'RMS: X=${(noiseX * 1000).toStringAsFixed(1)} µT, Y=${(noiseY * 1000).toStringAsFixed(1)} µT',
             style: TextStyle(
@@ -8656,7 +8874,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               : null,
           initiallyExpanded: false,
           children: [
-            if (sensorHistory.length > 10) ...[
+            if (_sensorDataManager.history.length > 10) ...[
               // RMS Rauschen
               Container(
                 padding: const EdgeInsets.all(16),
@@ -8726,7 +8944,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     const Divider(height: 16),
                     _buildStatRow('Y Frequenz', '${dominantFreqY.toStringAsFixed(1)} Hz'),
                     const Divider(height: 16),
-                    _buildStatRow('Datenpunkte', '${sensorHistory.length} / $maxHistoryLength'),
+                    _buildStatRow('Datenpunkte', '${_sensorDataManager.history.length} / 50000'),
                   ],
                 ),
               ),
@@ -8865,7 +9083,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   Widget _buildDualAxisChart({List<SensorReading>? data}) {
     // Use provided data or fall back to sensorHistory
-    final dataSource = data ?? sensorHistory;
+    final dataSource = data ?? _sensorDataManager.history;
 
     if (dataSource.isEmpty) {
       return const Center(
@@ -9000,7 +9218,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildDutyChart() {
-    if (sensorHistory.isEmpty) {
+    if (_sensorDataManager.history.isEmpty) {
       return const Center(child: Text('Keine Daten vorhanden'));
     }
 
@@ -9012,7 +9230,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           show: true,
           drawVerticalLine: true,
           horizontalInterval: 100,
-          verticalInterval: sensorHistory.length > 100 ? 20 : 10,
+          verticalInterval: _sensorDataManager.history.length > 100 ? 20 : 10,
         ),
         titlesData: FlTitlesData(
           show: true,
@@ -9022,7 +9240,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 30,
-              interval: sensorHistory.length > 100 ? sensorHistory.length / 5 : 20,
+              interval: _sensorDataManager.history.length > 100 ? _sensorDataManager.history.length / 5 : 20,
             ),
           ),
           leftTitles: AxisTitles(
@@ -9038,7 +9256,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         borderData: FlBorderData(show: true),
         lineBarsData: [
           LineChartBarData(
-            spots: sensorHistory.asMap().entries.map((entry) => FlSpot(
+            spots: _sensorDataManager.history.asMap().entries.map((entry) => FlSpot(
               entry.key.toDouble(),
               entry.value.duty1.toDouble(),
             )).toList(),
@@ -9048,7 +9266,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             dotData: FlDotData(show: false),
           ),
           LineChartBarData(
-            spots: sensorHistory.asMap().entries.map((entry) => FlSpot(
+            spots: _sensorDataManager.history.asMap().entries.map((entry) => FlSpot(
               entry.key.toDouble(),
               entry.value.duty2.toDouble(),
             )).toList(),
@@ -9066,7 +9284,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildDetailedStats() {
-    if (sensorHistory.length < 10) {
+    if (_sensorDataManager.history.length < 10) {
       return const Center(child: Text('Nicht genug Daten für Statistik'));
     }
 
@@ -9123,10 +9341,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           'Duty Cycle Statistik',
           Colors.orange,
           [
-            StatRow('Duty 1 Avg', '${sensorHistory.map((r) => r.duty1).reduce((a, b) => a + b) ~/ sensorHistory.length}'),
-            StatRow('Duty 2 Avg', '${sensorHistory.map((r) => r.duty2).reduce((a, b) => a + b) ~/ sensorHistory.length}'),
-            StatRow('Duty 1 Max', '${sensorHistory.map((r) => r.duty1).reduce(math.max)}'),
-            StatRow('Duty 2 Max', '${sensorHistory.map((r) => r.duty2).reduce(math.max)}'),
+            StatRow('Duty 1 Avg', '${_sensorDataManager.history.map((r) => r.duty1).reduce((a, b) => a + b) ~/ _sensorDataManager.history.length}'),
+            StatRow('Duty 2 Avg', '${_sensorDataManager.history.map((r) => r.duty2).reduce((a, b) => a + b) ~/ _sensorDataManager.history.length}'),
+            StatRow('Duty 1 Max', '${_sensorDataManager.history.map((r) => r.duty1).reduce(math.max)}'),
+            StatRow('Duty 2 Max', '${_sensorDataManager.history.map((r) => r.duty2).reduce(math.max)}'),
           ],
         ),
       ],
@@ -9193,7 +9411,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       StringBuffer csv = StringBuffer();
       csv.writeln('Timestamp,X (mT),Y (mT),Duty1,Duty2');
 
-      for (var reading in sensorHistory) {
+      for (var reading in _sensorDataManager.history) {
         csv.writeln('${reading.timestamp.toIso8601String()},${reading.x},${reading.y},${reading.duty1},${reading.duty2}');
       }
 
@@ -9204,7 +9422,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
       await Share.shareXFiles(
         [XFile(path)],
-        text: 'MagLev Sensor Daten - ${sensorHistory.length} Samples',
+        text: 'MagLev Sensor Daten - ${_sensorDataManager.history.length} Samples',
       );
 
       showSuccess('CSV Export erfolgreich!');
@@ -10127,7 +10345,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               // Sensor-Analyse Tab
               AnalysisWorkspacePage(
                 key: const PageStorageKey('analysis_workspace'), // Add key for state persistence
-                sensorHistory: sensorHistory,
+                sensorDataManager: _sensorDataManager,
                 isRecording: isRecording,
                 onRecordingChanged: (value) {
                   setState(() {
@@ -10143,7 +10361,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 onExportToCSV: () => exportSensorDataToCSV(),
                 onClearHistory: () {
                   setState(() {
-                    sensorHistory.clear();
+                    _sensorDataManager.clear();
                   });
                 },
                 onWidgetTouchChanged: (isTouched) {
@@ -12223,6 +12441,77 @@ class HeatmapPainter extends CustomPainter {
 //    - Bessere Platznutzung
 //    - Responsive Layout-Anpassungen
 // =============================================================
+
+// ========== ISOLATE FÜR STATISTIK-BERECHNUNGEN ==========
+// Trennt rechenintensive Statistik-Operationen vom UI-Thread
+// für flüssige Echtzeit-Performance
+
+/// Diese Funktion wird im separaten Isolate ausgeführt.
+/// Sie empfängt eine Liste von SensorDaten, berechnet die Statistiken
+/// und sendet das Ergebnis zurück.
+void statisticsIsolateEntry(SendPort sendPort) {
+  final port = ReceivePort();
+  // Sende den Port dieses Isolates zurück zum Haupt-Thread
+  sendPort.send(port.sendPort);
+
+  // Höre auf Nachrichten (die SensorReading-Liste) vom Haupt-Thread
+  port.listen((dynamic data) {
+    if (data is List<SensorReading>) {
+      // Führe die rechenintensiven Operationen durch
+      final stats = _calculateStatisticsInIsolate(data);
+      // Sende das Ergebnis zurück zum Haupt-Thread
+      sendPort.send(stats);
+    }
+  });
+}
+
+/// Die eigentliche Berechnungslogik, getrennt von der UI
+Map<String, dynamic> _calculateStatisticsInIsolate(List<SensorReading> data) {
+  if (data.length < 10) return {};
+
+  // X-Achse Statistiken
+  final xValues = data.map((r) => r.x).toList();
+  final xMin = xValues.reduce(math.min);
+  final xMax = xValues.reduce(math.max);
+  final xAvg = xValues.reduce((a, b) => a + b) / xValues.length;
+  final noiseX = _calculateRMSNoiseInIsolate(xValues, xAvg);
+
+  // Y-Achse Statistiken
+  final yValues = data.map((r) => r.y).toList();
+  final yMin = yValues.reduce(math.min);
+  final yMax = yValues.reduce(math.max);
+  final yAvg = yValues.reduce((a, b) => a + b) / yValues.length;
+  final noiseY = _calculateRMSNoiseInIsolate(yValues, yAvg);
+
+  // Einfache Frequenzschätzung über Nulldurchgänge
+  int xCrossings = 0;
+  int yCrossings = 0;
+  for (int i = 1; i < data.length; i++) {
+    if ((data[i-1].x - xAvg) * (data[i].x - xAvg) < 0) xCrossings++;
+    if ((data[i-1].y - yAvg) * (data[i].y - yAvg) < 0) yCrossings++;
+  }
+
+  double timeSpan = data.last.timestamp.difference(data.first.timestamp).inMilliseconds / 1000.0;
+  final dominantFreqX = timeSpan > 0 ? (xCrossings / 2.0) / timeSpan : 0.0;
+  final dominantFreqY = timeSpan > 0 ? (yCrossings / 2.0) / timeSpan : 0.0;
+
+  return {
+    'xMin': xMin, 'xMax': xMax, 'xAvg': xAvg, 'xStdDev': noiseX,
+    'yMin': yMin, 'yMax': yMax, 'yAvg': yAvg, 'yStdDev': noiseY,
+    'noiseX': noiseX, 'noiseY': noiseY,
+    'dominantFreqX': dominantFreqX, 'dominantFreqY': dominantFreqY
+  };
+}
+
+/// RMS-Rauschen berechnen (Root Mean Square)
+double _calculateRMSNoiseInIsolate(List<double> values, double mean) {
+  if (values.length < 2) return 0;
+  double variance = 0;
+  for (double val in values) {
+    variance += math.pow(val - mean, 2);
+  }
+  return math.sqrt(variance / values.length);
+}
 
 
 
