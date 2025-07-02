@@ -464,6 +464,8 @@ class ChartWidgetModel extends AnalysisWidgetModel {
   final bool showDataPoints; // Neue Option für Datenpunkte
   final double pointRadius; // Neue Option für Punkt-Radius
   final bool showLines; // Neue Option für Linien anzeigen
+  final bool showXAxisLabels; // Neue Option für X-Achsen-Beschriftung
+  final bool showYAxisLabels; // Neue Option für Y-Achsen-Beschriftung
 
   ChartWidgetModel({
     required String id,
@@ -479,6 +481,8 @@ class ChartWidgetModel extends AnalysisWidgetModel {
     this.showDataPoints = false,
     this.pointRadius = 2.0,
     this.showLines = true,
+    this.showXAxisLabels = true,
+    this.showYAxisLabels = true,
     AnalysisWidgetSize size = AnalysisWidgetSize.wideRectangle,
     GridPosition? position,
   }) : super(id: id, title: title, type: 'chart', size: size, position: position);
@@ -584,6 +588,8 @@ class AnalysisTab {
         showDataPoints: false,
         pointRadius: 2.0,
         showLines: true,
+        showXAxisLabels: true,
+        showYAxisLabels: true,
         size: AnalysisWidgetSize.fullWidth, // 4x4 Größe
         position: GridPosition(x: 0, y: 0), // Position oben links
       ),
@@ -1352,7 +1358,7 @@ class RealtimeChartPainter extends CustomPainter {
     }
     
     // Zeichne Datenpunkte wenn aktiviert
-    if (showDataPoints && visibleData.length < 5000) { // Limit für Performance
+    if (showDataPoints) {
       final xPointPaint = Paint()
         ..color = CupertinoColors.systemRed
         ..style = PaintingStyle.fill;
@@ -1361,8 +1367,15 @@ class RealtimeChartPainter extends CustomPainter {
         ..color = CupertinoColors.activeBlue
         ..style = PaintingStyle.fill;
       
-      // Zeichne jeden Punkt
-      for (int i = 0; i < visibleData.length; i++) {
+      // Intelligente Punkt-Abtastung basierend auf Datenmenge
+      final totalPoints = visibleData.length;
+      final maxPointsToDraw = 500; // Maximale Anzahl der zu zeichnenden Punkte
+      
+      // Berechne Schrittweite - zeige jeden n-ten Punkt
+      final step = totalPoints > maxPointsToDraw ? (totalPoints / maxPointsToDraw).ceil() : 1;
+      
+      // Zeichne Punkte mit Schrittweite
+      for (int i = 0; i < visibleData.length; i += step) {
         final reading = visibleData[i];
         final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
         final x = (timeDiff / displayRange) * size.width;
@@ -1373,6 +1386,19 @@ class RealtimeChartPainter extends CustomPainter {
         
         // Y-Achse Punkt
         final yY = size.height - ((reading.y - minVal) / (maxVal - minVal)) * size.height;
+        canvas.drawCircle(Offset(x, yY), pointRadius, yPointPaint);
+      }
+      
+      // Immer den letzten Punkt zeichnen für aktuelle Werte
+      if (totalPoints > 0 && (totalPoints - 1) % step != 0) {
+        final lastReading = visibleData.last;
+        final timeDiff = lastReading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+        final x = (timeDiff / displayRange) * size.width;
+        
+        final xY = size.height - ((lastReading.x - minVal) / (maxVal - minVal)) * size.height;
+        canvas.drawCircle(Offset(x, xY), pointRadius, xPointPaint);
+        
+        final yY = size.height - ((lastReading.y - minVal) / (maxVal - minVal)) * size.height;
         canvas.drawCircle(Offset(x, yY), pointRadius, yPointPaint);
       }
     }
@@ -1505,6 +1531,9 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                       lowerThreshold: widget.model.lowerThreshold,
                       showDataPoints: widget.model.showDataPoints,
                       pointRadius: widget.model.pointRadius,
+                      showLines: widget.model.showLines,
+                      showXAxisLabels: widget.model.showXAxisLabels,
+                      showYAxisLabels: widget.model.showYAxisLabels,
                       size: widget.model.size,
                       position: widget.model.position,
                     ));
@@ -1558,6 +1587,21 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                 },
                 tooltip: _isPaused ? 'Fortsetzen' : 'Pausieren',
               ),
+              // Clear Buffer Button
+              IconButton(
+                icon: Icon(
+                  CupertinoIcons.delete_simple,
+                  color: CupertinoColors.systemRed,
+                  size: 22,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _buffer.clear();
+                  });
+                  HapticFeedback.lightImpact();
+                },
+                tooltip: 'Puffer leeren',
+              ),
               // Echtzeit-Modus Anzeige
               Row(
                 children: [
@@ -1578,22 +1622,125 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
         ),
         if (widget.model.showTimeControls) const Divider(height: 1),
 
-        // Chart
+        // Chart mit Achsenbeschriftungen
         Expanded(
-          child: RepaintBoundary(
-            child: CustomPaint(
-              painter: RealtimeChartPainter(
-                // Effiziente List-Erstellung aus Queue
-                visibleData: _buffer.toList(growable: false), // growable: false für bessere Performance
-                displayRange: widget.model.displayRange,
-                showGrid: widget.model.showGrid,
-                lineThickness: widget.model.lineThickness,
-                showDataPoints: widget.model.showDataPoints,
-                pointRadius: widget.model.pointRadius,
-                showLines: widget.model.showLines,
-              ),
-              size: Size.infinite,
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Berechne Min/Max für Y-Achse
+              double minVal = double.infinity, maxVal = -double.infinity;
+              if (_buffer.isNotEmpty) {
+                for (var reading in _buffer) {
+                  minVal = math.min(minVal, math.min(reading.x, reading.y));
+                  maxVal = math.max(maxVal, math.max(reading.x, reading.y));
+                }
+                if (minVal == maxVal) {
+                  minVal -= 1;
+                  maxVal += 1;
+                }
+                final range = maxVal - minVal;
+                final padding = range * 0.1;
+                minVal -= padding;
+                maxVal += padding;
+              } else {
+                minVal = -10;
+                maxVal = 10;
+              }
+              
+              return Stack(
+                children: [
+                  // Y-Achsen Beschriftung
+                  if (widget.model.showYAxisLabels && !widget.isSmall)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 40,
+                      child: Container(
+                        color: Colors.white,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List.generate(5, (index) {
+                            final value = maxVal - (index * (maxVal - minVal) / 4);
+                            // Formatiere Werte sinnvoll
+                            String formattedValue;
+                            if (value.abs() < 0.01) {
+                              formattedValue = '0';
+                            } else if (value.abs() < 10) {
+                              formattedValue = value.toStringAsFixed(1);
+                            } else {
+                              formattedValue = value.toStringAsFixed(0);
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: Text(
+                                '$formattedValue mT',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: CupertinoColors.systemGrey,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    ),
+                  
+                  // Chart
+                  Positioned(
+                    left: widget.model.showYAxisLabels && !widget.isSmall ? 40 : 0,
+                    right: 0,
+                    top: 0,
+                    bottom: widget.model.showXAxisLabels && !widget.isSmall ? 30 : 0,
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        painter: RealtimeChartPainter(
+                          visibleData: _buffer.toList(growable: false),
+                          displayRange: widget.model.displayRange,
+                          showGrid: widget.model.showGrid,
+                          lineThickness: widget.model.lineThickness,
+                          showDataPoints: widget.model.showDataPoints,
+                          pointRadius: widget.model.pointRadius,
+                          showLines: widget.model.showLines,
+                        ),
+                        size: Size.infinite,
+                      ),
+                    ),
+                  ),
+                  
+                  // X-Achsen Beschriftung
+                  if (widget.model.showXAxisLabels && !widget.isSmall)
+                    Positioned(
+                      left: widget.model.showYAxisLabels ? 40 : 0,
+                      right: 0,
+                      bottom: 0,
+                      height: 30,
+                      child: Container(
+                        color: Colors.white,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List.generate(5, (index) {
+                            final seconds = widget.model.displayRange - (index * widget.model.displayRange / 4);
+                            String label;
+                            if (seconds < 60) {
+                              label = '-${seconds.toInt()}s';
+                            } else {
+                              label = '-${(seconds / 60).toStringAsFixed(1)}m';
+                            }
+                            return Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 9,
+                                color: CupertinoColors.systemGrey,
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ),
       ],
@@ -1683,6 +1830,11 @@ class OptimizedChartWidget extends StatelessWidget {
                     triggerEnabled: model.triggerEnabled,
                     upperThreshold: model.upperThreshold,
                     lowerThreshold: model.lowerThreshold,
+                    showDataPoints: model.showDataPoints,
+                    pointRadius: model.pointRadius,
+                    showLines: model.showLines,
+                    showXAxisLabels: model.showXAxisLabels,
+                    showYAxisLabels: model.showYAxisLabels,
                     size: model.size,
                     position: model.position,
                   ));
@@ -1801,16 +1953,16 @@ class OptimizedChartWidget extends StatelessWidget {
                     },
                   ),
                   titlesData: FlTitlesData(
-                    show: !isSmall,
+                    show: !isSmall && (model.showXAxisLabels || model.showYAxisLabels),
                     leftTitles: AxisTitles(
                       sideTitles: SideTitles(
-                        showTitles: !isSmall,
+                        showTitles: !isSmall && model.showYAxisLabels,
                         reservedSize: 40,
                         interval: (maxValue - minValue) / 4,
                         getTitlesWidget: (value, meta) => Padding(
                           padding: const EdgeInsets.only(right: 4),
                           child: Text(
-                            value.toStringAsFixed(1),
+                            '${value.toStringAsFixed(0)} mT',
                             style: TextStyle(
                               fontSize: 10,
                               color: CupertinoColors.systemGrey,
@@ -1822,7 +1974,7 @@ class OptimizedChartWidget extends StatelessWidget {
                     ),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
-                        showTitles: !isSmall,
+                        showTitles: !isSmall && model.showXAxisLabels,
                         reservedSize: 30,
                         interval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 4 : (actualMaxX - actualMinX) / 5,
                         getTitlesWidget: (value, meta) {
@@ -3279,12 +3431,24 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                                   ),
                                 ),
                                 if (model.type == 'chart' && !isEditMode && model.gridWidth >= 2)
-                                  GestureDetector(
-                                    onTap: () => _showWidgetSettings(tabIndex, widgetIndex),
-                                    child: Icon(
-                                      CupertinoIcons.settings,
-                                      size: 16,
-                                      color: CupertinoColors.systemGrey,
+                                  SizedBox(
+                                    height: 24, // Fixe Höhe für richtige Ausrichtung
+                                    child: Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: () => _showWidgetSettings(tabIndex, widgetIndex),
+                                        borderRadius: BorderRadius.circular(12),
+                                        splashColor: CupertinoColors.systemBlue.withOpacity(0.2),
+                                        highlightColor: CupertinoColors.systemBlue.withOpacity(0.1),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8), // Kleineres Padding nur horizontal
+                                          child: Icon(
+                                            CupertinoIcons.ellipsis_circle_fill,
+                                            size: 20,
+                                            color: CupertinoColors.systemBlue,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
                               ],
@@ -3964,6 +4128,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                             upperThreshold: model.upperThreshold,
                             lowerThreshold: model.lowerThreshold,
                             lineThickness: model.lineThickness,
+                            showDataPoints: model.showDataPoints,
+                            pointRadius: model.pointRadius,
+                            showLines: model.showLines,
+                            showXAxisLabels: model.showXAxisLabels,
+                            showYAxisLabels: model.showYAxisLabels,
                             size: model.size,
                             position: model.position,
                           );
@@ -4429,14 +4598,24 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                       ),
                     ),
                     if (!isEditMode && model.type == 'chart')
-                      CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        minSize: 28,
-                        onPressed: () => _showWidgetSettings(tabIndex, widgetIndex),
-                        child: Icon(
-                          CupertinoIcons.slider_horizontal_3,
-                          size: 20,
-                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => _showWidgetSettings(tabIndex, widgetIndex),
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: CupertinoColors.systemGrey6.resolveFrom(context),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              CupertinoIcons.ellipsis,
+                              size: 18,
+                              color: CupertinoColors.systemGrey.resolveFrom(context),
+                            ),
+                          ),
                         ),
                       ),
                   ],
@@ -4494,16 +4673,23 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                 child: GestureDetector(
                   onTap: () => _showChartSettings(tabIndex, widgetIndex, model as ChartWidgetModel),
                   child: Container(
-                    width: 36,
-                    height: 36,
+                    width: 80,
+                    height: 80,
                     decoration: BoxDecoration(
-                      color: CupertinoColors.systemBlue,
-                      shape: BoxShape.circle,
+                      color: Colors.red, // ROT ZUM TESTEN
+                      borderRadius: BorderRadius.circular(40),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 20,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
                     ),
-                    child: const Icon(
-                      Icons.settings,
+                    child: Icon(
+                      CupertinoIcons.gear_alt_fill,
                       color: Colors.white,
-                      size: 20,
+                      size: 50,
                     ),
                   ),
                 ),
@@ -5470,6 +5656,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
           lineThickness: 2.0,
           showTimeControls: true,
           size: size,
+          showXAxisLabels: true,
+          showYAxisLabels: true,
         );
         break;
       case 'statistics':
@@ -5634,6 +5822,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                         upperThreshold: chartModel.upperThreshold,
                         lowerThreshold: chartModel.lowerThreshold,
                         lineThickness: chartModel.lineThickness,
+                        showDataPoints: chartModel.showDataPoints,
+                        pointRadius: chartModel.pointRadius,
+                        showLines: chartModel.showLines,
+                        showXAxisLabels: chartModel.showXAxisLabels,
+                        showYAxisLabels: chartModel.showYAxisLabels,
                         size: chartModel.size,
                         position: chartModel.position,
                       );
@@ -5662,6 +5855,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                       upperThreshold: chartModel.upperThreshold,
                       lowerThreshold: chartModel.lowerThreshold,
                       lineThickness: chartModel.lineThickness,
+                      showDataPoints: chartModel.showDataPoints,
+                      pointRadius: chartModel.pointRadius,
+                      showLines: chartModel.showLines,
+                      showXAxisLabels: chartModel.showXAxisLabels,
+                      showYAxisLabels: chartModel.showYAxisLabels,
                       size: chartModel.size,
                       position: chartModel.position,
                     );
@@ -5689,6 +5887,79 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                       upperThreshold: chartModel.upperThreshold,
                       lowerThreshold: chartModel.lowerThreshold,
                       lineThickness: chartModel.lineThickness,
+                      showDataPoints: chartModel.showDataPoints,
+                      pointRadius: chartModel.pointRadius,
+                      showLines: chartModel.showLines,
+                      showXAxisLabels: chartModel.showXAxisLabels,
+                      showYAxisLabels: chartModel.showYAxisLabels,
+                      size: chartModel.size,
+                      position: chartModel.position,
+                    );
+                  });
+                  setModalState(() {});
+                },
+              ),
+            ),
+            const Divider(),
+            
+            // X-Achse Beschriftung
+            ListTile(
+              title: const Text('X-Achse Beschriftung'),
+              subtitle: const Text('Zeigt Beschriftung der roten X-Achse'),
+              trailing: Switch(
+                value: chartModel.showXAxisLabels,
+                onChanged: (value) {
+                  setState(() {
+                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                      id: chartModel.id,
+                      title: chartModel.title,
+                      showGrid: chartModel.showGrid,
+                      showLegend: chartModel.showLegend,
+                      displayRange: chartModel.displayRange,
+                      showTimeControls: chartModel.showTimeControls,
+                      triggerEnabled: chartModel.triggerEnabled,
+                      upperThreshold: chartModel.upperThreshold,
+                      lowerThreshold: chartModel.lowerThreshold,
+                      lineThickness: chartModel.lineThickness,
+                      showDataPoints: chartModel.showDataPoints,
+                      pointRadius: chartModel.pointRadius,
+                      showLines: chartModel.showLines,
+                      showXAxisLabels: value,
+                      showYAxisLabels: chartModel.showYAxisLabels,
+                      size: chartModel.size,
+                      position: chartModel.position,
+                    );
+                  });
+                  setModalState(() {});
+                },
+              ),
+            ),
+            const Divider(),
+            
+            // Y-Achse Beschriftung
+            ListTile(
+              title: const Text('Y-Achse Beschriftung'),
+              subtitle: const Text('Zeigt Beschriftung der blauen Y-Achse'),
+              trailing: Switch(
+                value: chartModel.showYAxisLabels,
+                onChanged: (value) {
+                  setState(() {
+                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                      id: chartModel.id,
+                      title: chartModel.title,
+                      showGrid: chartModel.showGrid,
+                      showLegend: chartModel.showLegend,
+                      displayRange: chartModel.displayRange,
+                      showTimeControls: chartModel.showTimeControls,
+                      triggerEnabled: chartModel.triggerEnabled,
+                      upperThreshold: chartModel.upperThreshold,
+                      lowerThreshold: chartModel.lowerThreshold,
+                      lineThickness: chartModel.lineThickness,
+                      showDataPoints: chartModel.showDataPoints,
+                      pointRadius: chartModel.pointRadius,
+                      showLines: chartModel.showLines,
+                      showXAxisLabels: chartModel.showXAxisLabels,
+                      showYAxisLabels: value,
                       size: chartModel.size,
                       position: chartModel.position,
                     );
@@ -5723,6 +5994,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                         upperThreshold: chartModel.upperThreshold,
                         lowerThreshold: chartModel.lowerThreshold,
                         lineThickness: value,
+                        showDataPoints: chartModel.showDataPoints,
+                        pointRadius: chartModel.pointRadius,
+                        showLines: chartModel.showLines,
+                        showXAxisLabels: chartModel.showXAxisLabels,
+                        showYAxisLabels: chartModel.showYAxisLabels,
                         size: chartModel.size,
                         position: chartModel.position,
                       );
@@ -5755,6 +6031,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                       lineThickness: chartModel.lineThickness,
                       showDataPoints: value,
                       pointRadius: chartModel.pointRadius,
+                      showLines: chartModel.showLines,
+                      showXAxisLabels: chartModel.showXAxisLabels,
+                      showYAxisLabels: chartModel.showYAxisLabels,
                       size: chartModel.size,
                       position: chartModel.position,
                     );
@@ -5787,6 +6066,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                       showDataPoints: chartModel.showDataPoints,
                       pointRadius: chartModel.pointRadius,
                       showLines: value,
+                      showXAxisLabels: chartModel.showXAxisLabels,
+                      showYAxisLabels: chartModel.showYAxisLabels,
                       size: chartModel.size,
                       position: chartModel.position,
                     );
@@ -5824,6 +6105,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                           lineThickness: chartModel.lineThickness,
                           showDataPoints: chartModel.showDataPoints,
                           pointRadius: value,
+                          showLines: chartModel.showLines,
+                          showXAxisLabels: chartModel.showXAxisLabels,
+                          showYAxisLabels: chartModel.showYAxisLabels,
                           size: chartModel.size,
                           position: chartModel.position,
                         );
@@ -5854,6 +6138,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                       upperThreshold: chartModel.upperThreshold,
                       lowerThreshold: chartModel.lowerThreshold,
                       lineThickness: chartModel.lineThickness,
+                      showDataPoints: chartModel.showDataPoints,
+                      pointRadius: chartModel.pointRadius,
+                      showLines: chartModel.showLines,
+                      showXAxisLabels: chartModel.showXAxisLabels,
+                      showYAxisLabels: chartModel.showYAxisLabels,
                       size: chartModel.size,
                       position: chartModel.position,
                     );
@@ -5917,6 +6206,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                           lineThickness: chartModel.lineThickness,
                           showDataPoints: chartModel.showDataPoints,
                           pointRadius: chartModel.pointRadius,
+                          showLines: chartModel.showLines,
+                          showXAxisLabels: chartModel.showXAxisLabels,
+                          showYAxisLabels: chartModel.showYAxisLabels,
                           size: chartModel.size,
                           position: chartModel.position,
                         );
@@ -5979,6 +6271,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                           lineThickness: chartModel.lineThickness,
                           showDataPoints: chartModel.showDataPoints,
                           pointRadius: chartModel.pointRadius,
+                          showLines: chartModel.showLines,
+                          showXAxisLabels: chartModel.showXAxisLabels,
+                          showYAxisLabels: chartModel.showYAxisLabels,
                           size: chartModel.size,
                           position: chartModel.position,
                         );
@@ -6044,6 +6339,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
             double pointRadius = chartModel.pointRadius;
             double lineThickness = chartModel.lineThickness;
             bool showGrid = chartModel.showGrid;
+            bool showLines = chartModel.showLines;
+            bool showXAxisLabels = chartModel.showXAxisLabels;
+            bool showYAxisLabels = chartModel.showYAxisLabels;
             
             return Container(
               height: MediaQuery.of(context).size.height * 0.5,
@@ -6097,6 +6395,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                                 lineThickness: lineThickness,
                                 showDataPoints: showDataPoints,
                                 pointRadius: pointRadius,
+                                showLines: showLines,
+                                showXAxisLabels: showXAxisLabels,
+                                showYAxisLabels: showYAxisLabels,
                                 size: chartModel.size,
                                 position: chartModel.position,
                               );
@@ -6181,6 +6482,36 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                           ),
                         ],
                         
+                        // Linien anzeigen
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.show_chart, color: CupertinoColors.systemBlue),
+                                  const SizedBox(width: 12),
+                                  Text('Linien anzeigen', style: TextStyle(fontSize: 16)),
+                                ],
+                              ),
+                              CupertinoSwitch(
+                                value: showLines,
+                                onChanged: (value) {
+                                  setModalState(() {
+                                    showLines = value;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        
                         // Linien-Dicke
                         const SizedBox(height: 16),
                         Container(
@@ -6246,6 +6577,66 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                             ],
                           ),
                         ),
+                        
+                        // X-Achsen Beschriftung
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.text_fields, color: CupertinoColors.systemRed),
+                                  const SizedBox(width: 12),
+                                  Text('X-Achse Beschriftung', style: TextStyle(fontSize: 16)),
+                                ],
+                              ),
+                              CupertinoSwitch(
+                                value: showXAxisLabels,
+                                onChanged: (value) {
+                                  setModalState(() {
+                                    showXAxisLabels = value;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        // Y-Achsen Beschriftung
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.text_rotation_none, color: CupertinoColors.activeBlue),
+                                  const SizedBox(width: 12),
+                                  Text('Y-Achse Beschriftung', style: TextStyle(fontSize: 16)),
+                                ],
+                              ),
+                              CupertinoSwitch(
+                                value: showYAxisLabels,
+                                onChanged: (value) {
+                                  setModalState(() {
+                                    showYAxisLabels = value;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -6286,6 +6677,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
         id: 'chart_template',
         title: 'Sensor-Diagramm',
         lineThickness: 2.0,
+        showXAxisLabels: true,
+        showYAxisLabels: true,
       ),
       StatisticsWidgetModel(
         id: 'stats_template',
@@ -6538,6 +6931,8 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
             showDataPoints: false,
             pointRadius: 2.0,
             showLines: true,
+            showXAxisLabels: true,
+            showYAxisLabels: true,
           );
           break;
         case 'statistics':
