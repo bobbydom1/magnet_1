@@ -22,6 +22,61 @@ import 'dart:ui';
 // App Version
 const String APP_VERSION = "v13.0";
 
+// Custom Slider Thumb Shape ohne Schatten aber mit Rand
+class _CustomSliderThumbShape extends SliderComponentShape {
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) {
+    return const Size(28, 28);
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final Canvas canvas = context.canvas;
+    
+    // Weißer Kreis
+    final fillPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    
+    // Subtiler Schatten-Effekt ohne echten Schatten
+    final gradientPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.grey.withOpacity(0.05),
+          Colors.grey.withOpacity(0.1),
+        ],
+        stops: const [0.7, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: 15));
+    
+    // Hintergrund mit Gradient
+    canvas.drawCircle(center, 15, gradientPaint);
+    
+    // Weißer Kreis darüber
+    canvas.drawCircle(center, 14, fillPaint);
+    
+    // Sehr subtiler innerer Rand
+    final innerBorderPaint = Paint()
+      ..color = Colors.black.withOpacity(0.04)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+    
+    canvas.drawCircle(center, 13.5, innerBorderPaint);
+  }
+}
+
 // ========== ZENTRALE DATENVERWALTUNG FÜR MAXIMALE PERFORMANCE ==========
 class SensorDataManager {
   // Die Haupt-History für Snapshots, maximal 50.000 Einträge
@@ -1299,8 +1354,8 @@ class RealtimeChartPainter extends CustomPainter {
     // Grid
     if (showGrid) {
       final gridPaint = Paint()
-        ..color = CupertinoColors.systemGrey4.withOpacity(0.3)
-        ..strokeWidth = 1;
+        ..color = CupertinoColors.separator.withOpacity(0.2)
+        ..strokeWidth = 0.5;
 
       for (int i = 1; i < 5; i++) {
         final y = size.height * i / 5;
@@ -1507,12 +1562,22 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Zeitfenster-Kontrollen (vollständig interaktiv)
+        // Zeitfenster-Kontrollen - Apple Design
         if (widget.model.showTimeControls) Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
+          height: 44,
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemBackground,
+            border: Border(
+              bottom: BorderSide(
+                color: CupertinoColors.separator,
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
               // Zeitskala-Auswahl mit Popup
               PopupMenuButton<int>(
                 initialValue: widget.model.displayRange,
@@ -1552,75 +1617,141 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    border: Border.all(color: CupertinoColors.systemGrey4),
-                    borderRadius: BorderRadius.circular(6),
+                    color: CupertinoColors.tertiarySystemFill,
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.access_time, size: 16, color: CupertinoColors.systemGrey),
+                      Icon(
+                        CupertinoIcons.clock,
+                        size: 16,
+                        color: CupertinoColors.systemBlue,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         widget.model.displayRange == 1
-                            ? '1 Sekunde'
+                            ? '1s'
                             : widget.model.displayRange < 60
-                            ? '${widget.model.displayRange} Sekunden'
-                            : '${widget.model.displayRange ~/ 60} Min',
-                        style: TextStyle(fontSize: 12),
+                            ? '${widget.model.displayRange}s'
+                            : '${widget.model.displayRange ~/ 60}m',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: CupertinoColors.label,
+                        ),
                       ),
                       const SizedBox(width: 4),
-                      Icon(Icons.arrow_drop_down, size: 18, color: CupertinoColors.systemGrey),
+                      Icon(
+                        CupertinoIcons.chevron_down,
+                        size: 12,
+                        color: CupertinoColors.tertiaryLabel,
+                      ),
                     ],
                   ),
                 ),
               ),
-              // Pause/Play Button
-              IconButton(
-                icon: Icon(
-                  _isPaused ? Icons.play_arrow : Icons.pause,
-                  color: _isPaused ? CupertinoColors.activeGreen : CupertinoColors.systemOrange,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _isPaused = !_isPaused;
-                  });
-                },
-                tooltip: _isPaused ? 'Fortsetzen' : 'Pausieren',
-              ),
-              // Clear Buffer Button
-              IconButton(
-                icon: Icon(
-                  CupertinoIcons.delete_simple,
-                  color: CupertinoColors.systemRed,
-                  size: 22,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _buffer.clear();
-                  });
-                  HapticFeedback.lightImpact();
-                },
-                tooltip: 'Puffer leeren',
-              ),
-              // Echtzeit-Modus Anzeige
+              const Spacer(),
+              // Control Buttons Group
               Row(
                 children: [
-                  Icon(
-                    _isPaused ? Icons.pause_circle_filled : Icons.flash_on, 
-                    color: _isPaused ? CupertinoColors.systemOrange : CupertinoColors.systemYellow, 
-                    size: 16
+                  // Clear Button
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 32,
+                    onPressed: () {
+                      setState(() {
+                        _buffer.clear();
+                      });
+                      HapticFeedback.lightImpact();
+                    },
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemFill,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        CupertinoIcons.trash,
+                        size: 18,
+                        color: CupertinoColors.systemRed,
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _isPaused ? 'Pausiert' : 'Echtzeit',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  const SizedBox(width: 8),
+                  // Play/Pause Button
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 32,
+                    onPressed: () {
+                      setState(() {
+                        _isPaused = !_isPaused;
+                      });
+                    },
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: _isPaused
+                            ? CupertinoColors.systemGreen.withOpacity(0.15)
+                            : CupertinoColors.systemOrange.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        _isPaused
+                            ? CupertinoIcons.play_fill
+                            : CupertinoIcons.pause_fill,
+                        size: 16,
+                        color: _isPaused
+                            ? CupertinoColors.systemGreen
+                            : CupertinoColors.systemOrange,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Status Badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _isPaused
+                          ? CupertinoColors.systemOrange.withOpacity(0.15)
+                          : CupertinoColors.systemGreen.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: _isPaused
+                                ? CupertinoColors.systemOrange
+                                : CupertinoColors.systemGreen,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _isPaused ? 'Pausiert' : 'Live',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _isPaused
+                                ? CupertinoColors.systemOrange
+                                : CupertinoColors.systemGreen,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ],
+              ],
+            ),
           ),
         ),
-        if (widget.model.showTimeControls) const Divider(height: 1),
 
         // Chart mit Achsenbeschriftungen
         Expanded(
@@ -1656,9 +1787,11 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                       bottom: 0,
                       width: 40,
                       child: Container(
-                        color: Colors.white,
+                        color: CupertinoColors.systemBackground,
+                        padding: const EdgeInsets.only(right: 8),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: List.generate(5, (index) {
                             final value = maxVal - (index * (maxVal - minVal) / 4);
                             // Formatiere Werte sinnvoll
@@ -1670,15 +1803,13 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                             } else {
                               formattedValue = value.toStringAsFixed(0);
                             }
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 4),
-                              child: Text(
-                                '$formattedValue mT',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  color: CupertinoColors.systemGrey,
-                                ),
-                                textAlign: TextAlign.right,
+                            return Text(
+                              formattedValue,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                color: CupertinoColors.secondaryLabel,
+                                fontFeatures: [FontFeature.tabularFigures()],
                               ),
                             );
                           }),
@@ -1716,22 +1847,26 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                       bottom: 0,
                       height: 30,
                       child: Container(
-                        color: Colors.white,
+                        color: CupertinoColors.systemBackground,
+                        padding: const EdgeInsets.only(top: 8),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: List.generate(5, (index) {
                             final seconds = widget.model.displayRange - (index * widget.model.displayRange / 4);
                             String label;
-                            if (seconds < 60) {
+                            if (seconds == 0) {
+                              label = 'Jetzt';
+                            } else if (seconds < 60) {
                               label = '-${seconds.toInt()}s';
                             } else {
-                              label = '-${(seconds / 60).toStringAsFixed(1)}m';
+                              label = '-${(seconds / 60).toStringAsFixed(0)}m';
                             }
                             return Text(
                               label,
                               style: TextStyle(
-                                fontSize: 9,
-                                color: CupertinoColors.systemGrey,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                color: CupertinoColors.secondaryLabel,
                               ),
                             );
                           }),
@@ -5800,493 +5935,12 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     switch (currentWidget.type) {
       case 'chart':
         final chartModel = currentWidget as ChartWidgetModel;
-        return ListView(
-          children: [
-            // Zeitkontrollen-Toggle (nur für Live-Tabs)
-            if (openTabs[tabIndex].isLive) ...[
-              ListTile(
-                title: const Text('Zeitkontrollen anzeigen'),
-                subtitle: const Text('Play/Pause und Zeitfenster im Widget'),
-                trailing: Switch(
-                  value: chartModel.showTimeControls,
-                  onChanged: (value) {
-                    setState(() {
-                      openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                        id: chartModel.id,
-                        title: chartModel.title,
-                        showGrid: chartModel.showGrid,
-                        showLegend: chartModel.showLegend,
-                        displayRange: chartModel.displayRange,
-                        showTimeControls: value,
-                        triggerEnabled: chartModel.triggerEnabled,
-                        upperThreshold: chartModel.upperThreshold,
-                        lowerThreshold: chartModel.lowerThreshold,
-                        lineThickness: chartModel.lineThickness,
-                        showDataPoints: chartModel.showDataPoints,
-                        pointRadius: chartModel.pointRadius,
-                        showLines: chartModel.showLines,
-                        showXAxisLabels: chartModel.showXAxisLabels,
-                        showYAxisLabels: chartModel.showYAxisLabels,
-                        size: chartModel.size,
-                        position: chartModel.position,
-                      );
-                    });
-                    setModalState(() {});
-                  },
-                ),
-              ),
-              const Divider(),
-            ],
-
-            ListTile(
-              title: const Text('Gitter anzeigen'),
-              trailing: Switch(
-                value: chartModel.showGrid,
-                onChanged: (value) {
-                  setState(() {
-                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                      id: chartModel.id,
-                      title: chartModel.title,
-                      showGrid: value,
-                      showLegend: chartModel.showLegend,
-                      displayRange: chartModel.displayRange,
-                      showTimeControls: chartModel.showTimeControls,
-                      triggerEnabled: chartModel.triggerEnabled,
-                      upperThreshold: chartModel.upperThreshold,
-                      lowerThreshold: chartModel.lowerThreshold,
-                      lineThickness: chartModel.lineThickness,
-                      showDataPoints: chartModel.showDataPoints,
-                      pointRadius: chartModel.pointRadius,
-                      showLines: chartModel.showLines,
-                      showXAxisLabels: chartModel.showXAxisLabels,
-                      showYAxisLabels: chartModel.showYAxisLabels,
-                      size: chartModel.size,
-                      position: chartModel.position,
-                    );
-                  });
-                  setModalState(() {});
-                },
-              ),
-            ),
-            const Divider(),
-
-            ListTile(
-              title: const Text('Legende anzeigen'),
-              trailing: Switch(
-                value: chartModel.showLegend,
-                onChanged: (value) {
-                  setState(() {
-                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                      id: chartModel.id,
-                      title: chartModel.title,
-                      showGrid: chartModel.showGrid,
-                      showLegend: value,
-                      displayRange: chartModel.displayRange,
-                      showTimeControls: chartModel.showTimeControls,
-                      triggerEnabled: chartModel.triggerEnabled,
-                      upperThreshold: chartModel.upperThreshold,
-                      lowerThreshold: chartModel.lowerThreshold,
-                      lineThickness: chartModel.lineThickness,
-                      showDataPoints: chartModel.showDataPoints,
-                      pointRadius: chartModel.pointRadius,
-                      showLines: chartModel.showLines,
-                      showXAxisLabels: chartModel.showXAxisLabels,
-                      showYAxisLabels: chartModel.showYAxisLabels,
-                      size: chartModel.size,
-                      position: chartModel.position,
-                    );
-                  });
-                  setModalState(() {});
-                },
-              ),
-            ),
-            const Divider(),
-            
-            // X-Achse Beschriftung
-            ListTile(
-              title: const Text('X-Achse Beschriftung'),
-              subtitle: const Text('Zeigt Beschriftung der roten X-Achse'),
-              trailing: Switch(
-                value: chartModel.showXAxisLabels,
-                onChanged: (value) {
-                  setState(() {
-                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                      id: chartModel.id,
-                      title: chartModel.title,
-                      showGrid: chartModel.showGrid,
-                      showLegend: chartModel.showLegend,
-                      displayRange: chartModel.displayRange,
-                      showTimeControls: chartModel.showTimeControls,
-                      triggerEnabled: chartModel.triggerEnabled,
-                      upperThreshold: chartModel.upperThreshold,
-                      lowerThreshold: chartModel.lowerThreshold,
-                      lineThickness: chartModel.lineThickness,
-                      showDataPoints: chartModel.showDataPoints,
-                      pointRadius: chartModel.pointRadius,
-                      showLines: chartModel.showLines,
-                      showXAxisLabels: value,
-                      showYAxisLabels: chartModel.showYAxisLabels,
-                      size: chartModel.size,
-                      position: chartModel.position,
-                    );
-                  });
-                  setModalState(() {});
-                },
-              ),
-            ),
-            const Divider(),
-            
-            // Y-Achse Beschriftung
-            ListTile(
-              title: const Text('Y-Achse Beschriftung'),
-              subtitle: const Text('Zeigt Beschriftung der blauen Y-Achse'),
-              trailing: Switch(
-                value: chartModel.showYAxisLabels,
-                onChanged: (value) {
-                  setState(() {
-                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                      id: chartModel.id,
-                      title: chartModel.title,
-                      showGrid: chartModel.showGrid,
-                      showLegend: chartModel.showLegend,
-                      displayRange: chartModel.displayRange,
-                      showTimeControls: chartModel.showTimeControls,
-                      triggerEnabled: chartModel.triggerEnabled,
-                      upperThreshold: chartModel.upperThreshold,
-                      lowerThreshold: chartModel.lowerThreshold,
-                      lineThickness: chartModel.lineThickness,
-                      showDataPoints: chartModel.showDataPoints,
-                      pointRadius: chartModel.pointRadius,
-                      showLines: chartModel.showLines,
-                      showXAxisLabels: chartModel.showXAxisLabels,
-                      showYAxisLabels: value,
-                      size: chartModel.size,
-                      position: chartModel.position,
-                    );
-                  });
-                  setModalState(() {});
-                },
-              ),
-            ),
-            const Divider(),
-
-            ListTile(
-              title: const Text('Linienstärke'),
-              subtitle: Text('${chartModel.lineThickness.toStringAsFixed(1)} Pixel'),
-              trailing: SizedBox(
-                width: 200,
-                child: Slider(
-                  value: chartModel.lineThickness,
-                  min: 0.5,
-                  max: 5.0,
-                  divisions: 9,
-                  label: chartModel.lineThickness.toStringAsFixed(1),
-                  onChanged: (value) {
-                    setState(() {
-                      openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                        id: chartModel.id,
-                        title: chartModel.title,
-                        showGrid: chartModel.showGrid,
-                        showLegend: chartModel.showLegend,
-                        displayRange: chartModel.displayRange,
-                        showTimeControls: chartModel.showTimeControls,
-                        triggerEnabled: chartModel.triggerEnabled,
-                        upperThreshold: chartModel.upperThreshold,
-                        lowerThreshold: chartModel.lowerThreshold,
-                        lineThickness: value,
-                        showDataPoints: chartModel.showDataPoints,
-                        pointRadius: chartModel.pointRadius,
-                        showLines: chartModel.showLines,
-                        showXAxisLabels: chartModel.showXAxisLabels,
-                        showYAxisLabels: chartModel.showYAxisLabels,
-                        size: chartModel.size,
-                        position: chartModel.position,
-                      );
-                    });
-                    setModalState(() {});
-                  },
-                ),
-              ),
-            ),
-            const Divider(),
-            
-            // Datenpunkte anzeigen
-            ListTile(
-              title: const Text('Datenpunkte anzeigen'),
-              subtitle: const Text('Zeigt einzelne Messpunkte als Kreise'),
-              trailing: Switch(
-                value: chartModel.showDataPoints,
-                onChanged: (value) {
-                  setState(() {
-                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                      id: chartModel.id,
-                      title: chartModel.title,
-                      showGrid: chartModel.showGrid,
-                      showLegend: chartModel.showLegend,
-                      displayRange: chartModel.displayRange,
-                      showTimeControls: chartModel.showTimeControls,
-                      triggerEnabled: chartModel.triggerEnabled,
-                      upperThreshold: chartModel.upperThreshold,
-                      lowerThreshold: chartModel.lowerThreshold,
-                      lineThickness: chartModel.lineThickness,
-                      showDataPoints: value,
-                      pointRadius: chartModel.pointRadius,
-                      showLines: chartModel.showLines,
-                      showXAxisLabels: chartModel.showXAxisLabels,
-                      showYAxisLabels: chartModel.showYAxisLabels,
-                      size: chartModel.size,
-                      position: chartModel.position,
-                    );
-                  });
-                  setModalState(() {});
-                },
-              ),
-            ),
-            
-            // Linien anzeigen
-            const Divider(),
-            ListTile(
-              title: const Text('Linien anzeigen'),
-              subtitle: const Text('Zeigt Verbindungslinien zwischen den Punkten'),
-              trailing: Switch(
-                value: chartModel.showLines,
-                onChanged: (value) {
-                  setState(() {
-                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                      id: chartModel.id,
-                      title: chartModel.title,
-                      showGrid: chartModel.showGrid,
-                      showLegend: chartModel.showLegend,
-                      displayRange: chartModel.displayRange,
-                      showTimeControls: chartModel.showTimeControls,
-                      triggerEnabled: chartModel.triggerEnabled,
-                      upperThreshold: chartModel.upperThreshold,
-                      lowerThreshold: chartModel.lowerThreshold,
-                      lineThickness: chartModel.lineThickness,
-                      showDataPoints: chartModel.showDataPoints,
-                      pointRadius: chartModel.pointRadius,
-                      showLines: value,
-                      showXAxisLabels: chartModel.showXAxisLabels,
-                      showYAxisLabels: chartModel.showYAxisLabels,
-                      size: chartModel.size,
-                      position: chartModel.position,
-                    );
-                  });
-                  setModalState(() {});
-                },
-              ),
-            ),
-            
-            // Punkt-Radius (nur wenn Datenpunkte angezeigt werden)
-            if (chartModel.showDataPoints) ...[
-              const Divider(),
-              ListTile(
-                title: const Text('Punkt-Größe'),
-                subtitle: Text('${chartModel.pointRadius.toStringAsFixed(1)} Pixel'),
-                trailing: SizedBox(
-                  width: 200,
-                  child: Slider(
-                    value: chartModel.pointRadius,
-                    min: 0.5,
-                    max: 5.0,
-                    divisions: 9,
-                    onChanged: (value) {
-                      setState(() {
-                        openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                          id: chartModel.id,
-                          title: chartModel.title,
-                          showGrid: chartModel.showGrid,
-                          showLegend: chartModel.showLegend,
-                          displayRange: chartModel.displayRange,
-                          showTimeControls: chartModel.showTimeControls,
-                          triggerEnabled: chartModel.triggerEnabled,
-                          upperThreshold: chartModel.upperThreshold,
-                          lowerThreshold: chartModel.lowerThreshold,
-                          lineThickness: chartModel.lineThickness,
-                          showDataPoints: chartModel.showDataPoints,
-                          pointRadius: value,
-                          showLines: chartModel.showLines,
-                          showXAxisLabels: chartModel.showXAxisLabels,
-                          showYAxisLabels: chartModel.showYAxisLabels,
-                          size: chartModel.size,
-                          position: chartModel.position,
-                        );
-                      });
-                      setModalState(() {});
-                    },
-                  ),
-                ),
-              ),
-            ],
-            const Divider(),
-
-            ListTile(
-              title: const Text('Trigger-Linien aktivieren'),
-              subtitle: const Text('Zeigt obere und untere Schwellenwerte an'),
-              trailing: Switch(
-                value: chartModel.triggerEnabled,
-                onChanged: (value) {
-                  setState(() {
-                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                      id: chartModel.id,
-                      title: chartModel.title,
-                      showGrid: chartModel.showGrid,
-                      showLegend: chartModel.showLegend,
-                      displayRange: chartModel.displayRange,
-                      showTimeControls: chartModel.showTimeControls,
-                      triggerEnabled: value,
-                      upperThreshold: chartModel.upperThreshold,
-                      lowerThreshold: chartModel.lowerThreshold,
-                      lineThickness: chartModel.lineThickness,
-                      showDataPoints: chartModel.showDataPoints,
-                      pointRadius: chartModel.pointRadius,
-                      showLines: chartModel.showLines,
-                      showXAxisLabels: chartModel.showXAxisLabels,
-                      showYAxisLabels: chartModel.showYAxisLabels,
-                      size: chartModel.size,
-                      position: chartModel.position,
-                    );
-                  });
-                  setModalState(() {});
-                },
-              ),
-            ),
-
-            if (chartModel.triggerEnabled) ...[
-              const Divider(),
-              ListTile(
-                title: const Text('Oberer Schwellenwert'),
-                subtitle: Text(chartModel.upperThreshold?.toStringAsFixed(2) ?? 'Nicht gesetzt'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () async {
-                    final controller = TextEditingController(
-                      text: chartModel.upperThreshold?.toString() ?? '',
-                    );
-                    final result = await showDialog<double?>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Oberer Schwellenwert'),
-                        content: TextField(
-                          controller: controller,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            hintText: 'z.B. 100.0',
-                            labelText: 'Wert',
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Abbrechen'),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              final value = double.tryParse(controller.text);
-                              Navigator.pop(context, value);
-                            },
-                            child: const Text('OK'),
-                          ),
-                        ],
-                      ),
-                    );
-
-                    if (result != null) {
-                      setState(() {
-                        openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                          id: chartModel.id,
-                          title: chartModel.title,
-                          showGrid: chartModel.showGrid,
-                          showLegend: chartModel.showLegend,
-                          displayRange: chartModel.displayRange,
-                          showTimeControls: chartModel.showTimeControls,
-                          triggerEnabled: chartModel.triggerEnabled,
-                          upperThreshold: result,
-                          lowerThreshold: chartModel.lowerThreshold,
-                          lineThickness: chartModel.lineThickness,
-                          showDataPoints: chartModel.showDataPoints,
-                          pointRadius: chartModel.pointRadius,
-                          showLines: chartModel.showLines,
-                          showXAxisLabels: chartModel.showXAxisLabels,
-                          showYAxisLabels: chartModel.showYAxisLabels,
-                          size: chartModel.size,
-                          position: chartModel.position,
-                        );
-                      });
-                      setModalState(() {});
-                    }
-                  },
-                ),
-              ),
-
-              ListTile(
-                title: const Text('Unterer Schwellenwert'),
-                subtitle: Text(chartModel.lowerThreshold?.toStringAsFixed(2) ?? 'Nicht gesetzt'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () async {
-                    final controller = TextEditingController(
-                      text: chartModel.lowerThreshold?.toString() ?? '',
-                    );
-                    final result = await showDialog<double?>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Unterer Schwellenwert'),
-                        content: TextField(
-                          controller: controller,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            hintText: 'z.B. 0.0',
-                            labelText: 'Wert',
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Abbrechen'),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              final value = double.tryParse(controller.text);
-                              Navigator.pop(context, value);
-                            },
-                            child: const Text('OK'),
-                          ),
-                        ],
-                      ),
-                    );
-
-                    if (result != null) {
-                      setState(() {
-                        openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                          id: chartModel.id,
-                          title: chartModel.title,
-                          showGrid: chartModel.showGrid,
-                          showLegend: chartModel.showLegend,
-                          displayRange: chartModel.displayRange,
-                          showTimeControls: chartModel.showTimeControls,
-                          triggerEnabled: chartModel.triggerEnabled,
-                          upperThreshold: chartModel.upperThreshold,
-                          lowerThreshold: result,
-                          lineThickness: chartModel.lineThickness,
-                          showDataPoints: chartModel.showDataPoints,
-                          pointRadius: chartModel.pointRadius,
-                          showLines: chartModel.showLines,
-                          showXAxisLabels: chartModel.showXAxisLabels,
-                          showYAxisLabels: chartModel.showYAxisLabels,
-                          size: chartModel.size,
-                          position: chartModel.position,
-                        );
-                      });
-                      setModalState(() {});
-                    }
-                  },
-                ),
-              ),
-            ],
-          ],
-        );
-
+        // Close the current dialog and open the new Apple-style one
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.pop(context);
+          _showChartSettings(tabIndex, widgetIndex, chartModel);
+        });
+        return Container(); // Return empty container since we're opening a new dialog
       case 'statistics':
         return const Center(
           child: Padding(
@@ -6326,6 +5980,179 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     }
   }
 
+  // iOS Style Helper Widgets
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w400,
+          color: CupertinoColors.secondaryLabel.resolveFrom(context),
+          letterSpacing: -0.08,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupedSection(List<Widget> children) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(children: children),
+    );
+  }
+
+  Widget _buildToggleRow({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.only(left: 16, right: 8, top: 4, bottom: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 29,
+            height: 29,
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemBlue.resolveFrom(context),
+              borderRadius: BorderRadius.circular(6.5),
+            ),
+            child: Icon(
+              icon,
+              color: CupertinoColors.white,
+              size: 17,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Theme(
+            data: ThemeData(
+              useMaterial3: true,
+            ),
+            child: Switch(
+              value: value,
+              onChanged: onChanged,
+              activeColor: CupertinoColors.white,
+              activeTrackColor: CupertinoColors.systemGreen,
+              inactiveThumbColor: CupertinoColors.white,
+              inactiveTrackColor: CupertinoColors.secondarySystemFill.resolveFrom(context),
+              trackOutlineColor: MaterialStateProperty.resolveWith((states) => Colors.transparent),
+              thumbColor: MaterialStateProperty.resolveWith((states) => CupertinoColors.white),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSliderRow({
+    required String title,
+    required double value,
+    required double min,
+    required double max,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 42, bottom: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemFill.resolveFrom(context),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    value.toStringAsFixed(1),
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: CupertinoColors.label.resolveFrom(context),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 42, right: 8),
+            child: Container(
+              height: 28,
+              child: SliderTheme(
+                data: SliderThemeData(
+                  trackHeight: 4,
+                  activeTrackColor: CupertinoColors.systemBlue.resolveFrom(context),
+                  inactiveTrackColor: CupertinoColors.systemFill.resolveFrom(context),
+                  thumbColor: CupertinoColors.white,
+                  thumbShape: _CustomSliderThumbShape(),
+                  overlayColor: Colors.transparent,
+                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 0),
+                ),
+                child: Slider(
+                  value: value,
+                  min: min,
+                  max: max,
+                  onChanged: onChanged,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDivider() {
+    return Container(
+      height: 0.5,
+      margin: const EdgeInsets.only(left: 58),
+      color: CupertinoColors.separator.resolveFrom(context),
+    );
+  }
+
   void _showChartSettings(int tabIndex, int widgetIndex, ChartWidgetModel chartModel) {
     showModalBottomSheet(
       context: context,
@@ -6334,314 +6161,360 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            // Lokale Kopien für den Dialog
-            bool showDataPoints = chartModel.showDataPoints;
-            double pointRadius = chartModel.pointRadius;
-            double lineThickness = chartModel.lineThickness;
-            bool showGrid = chartModel.showGrid;
-            bool showLines = chartModel.showLines;
-            bool showXAxisLabels = chartModel.showXAxisLabels;
-            bool showYAxisLabels = chartModel.showYAxisLabels;
+            // Immer das aktuelle Model aus der Liste holen
+            final currentChartModel = openTabs[tabIndex].widgets[widgetIndex] as ChartWidgetModel;
             
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.5,
-              decoration: const BoxDecoration(
-                color: Color(0xFFF2F2F7),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Column(
-                children: [
-                  // Handle
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    width: 40,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[400],
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-                  // Header
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Abbrechen'),
-                        ),
-                        Text(
-                          'Chart-Einstellungen',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+            return ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.75,
+                color: CupertinoColors.systemGroupedBackground.resolveFrom(context),
+                child: Column(
+                  children: [
+                    // iOS 17 Style Navigation Bar
+                    Container(
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemGroupedBackground.resolveFrom(context),
+                        border: Border(
+                          bottom: BorderSide(
+                            color: CupertinoColors.separator.resolveFrom(context),
+                            width: 0.0,
                           ),
                         ),
-                        TextButton(
-                          onPressed: () {
-                            // Update the model
-                            setState(() {
-                              openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
-                                id: chartModel.id,
-                                title: chartModel.title,
-                                displayRange: chartModel.displayRange,
-                                showTimeControls: chartModel.showTimeControls,
-                                showGrid: showGrid,
-                                showLegend: chartModel.showLegend,
-                                triggerEnabled: chartModel.triggerEnabled,
-                                upperThreshold: chartModel.upperThreshold,
-                                lowerThreshold: chartModel.lowerThreshold,
-                                lineThickness: lineThickness,
-                                showDataPoints: showDataPoints,
-                                pointRadius: pointRadius,
-                                showLines: showLines,
-                                showXAxisLabels: showXAxisLabels,
-                                showYAxisLabels: showYAxisLabels,
-                                size: chartModel.size,
-                                position: chartModel.position,
-                              );
-                            });
-                            Navigator.pop(context);
-                          },
-                          child: const Text('Fertig'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(),
-                  // Settings
-                  Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        // Datenpunkte anzeigen
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.scatter_plot, color: CupertinoColors.systemBlue),
-                                  const SizedBox(width: 12),
-                                  Text('Datenpunkte anzeigen', style: TextStyle(fontSize: 16)),
-                                ],
-                              ),
-                              CupertinoSwitch(
-                                value: showDataPoints,
-                                onChanged: (value) {
-                                  setModalState(() {
-                                    showDataPoints = value;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        // Punkt-Radius (nur wenn Punkte angezeigt werden)
-                        if (showDataPoints) ...[
-                          const SizedBox(height: 16),
+                      ),
+                      child: Column(
+                        children: [
+                          // Grabber
                           Container(
-                            padding: const EdgeInsets.all(16),
+                            margin: const EdgeInsets.only(top: 8, bottom: 8),
+                            width: 36,
+                            height: 5,
                             decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
+                              color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                              borderRadius: BorderRadius.circular(2.5),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.circle, color: CupertinoColors.systemBlue),
-                                    const SizedBox(width: 12),
-                                    Text('Punkt-Größe', style: TextStyle(fontSize: 16)),
-                                    const Spacer(),
-                                    Text('${pointRadius.toStringAsFixed(1)}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                  ],
+                          ),
+                          // Navigation Bar
+                          SizedBox(
+                            height: 44,
+                            child: NavigationToolbar(
+                              leading: CupertinoButton(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                onPressed: () => Navigator.pop(context),
+                                child: Text(
+                                  'Abbrechen',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    color: CupertinoColors.systemBlue.resolveFrom(context),
+                                  ),
                                 ),
-                                const SizedBox(height: 12),
-                                CupertinoSlider(
-                                  value: pointRadius,
-                                  min: 0.5,
-                                  max: 5.0,
-                                  divisions: 9,
-                                  onChanged: (value) {
-                                    setModalState(() {
-                                      pointRadius = value;
-                                    });
-                                  },
+                              ),
+                              middle: Text(
+                                'Diagramm',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  color: CupertinoColors.label.resolveFrom(context),
                                 ),
-                              ],
+                              ),
+                              trailing: CupertinoButton(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                onPressed: () => Navigator.pop(context),
+                                child: Text(
+                                  'Fertig',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w600,
+                                    color: CupertinoColors.systemBlue,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                  // Settings Content
+                  Expanded(
+                    child: ListView(
+                      padding: EdgeInsets.zero,
+                      children: [
+                        // Time Controls Section (only for live tabs) - MOVED TO TOP
+                        if (openTabs[tabIndex].isLive) ...[
+                          const SizedBox(height: 20),
+                          _buildSectionHeader('KONTROLLLEISTE'),
+                          _buildGroupedSection([
+                            _buildToggleRow(
+                              icon: CupertinoIcons.play_rectangle,
+                              title: 'Steuerung anzeigen',
+                              subtitle: 'Play, Pause und Löschen',
+                              value: currentChartModel.showTimeControls,
+                              onChanged: (value) {
+                                setState(() {
+                                  openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                    id: currentChartModel.id,
+                                    title: currentChartModel.title,
+                                    displayRange: currentChartModel.displayRange,
+                                    showTimeControls: value,
+                                    showGrid: currentChartModel.showGrid,
+                                    showLegend: currentChartModel.showLegend,
+                                    triggerEnabled: currentChartModel.triggerEnabled,
+                                    upperThreshold: currentChartModel.upperThreshold,
+                                    lowerThreshold: currentChartModel.lowerThreshold,
+                                    lineThickness: currentChartModel.lineThickness,
+                                    showDataPoints: currentChartModel.showDataPoints,
+                                    pointRadius: currentChartModel.pointRadius,
+                                    showLines: currentChartModel.showLines,
+                                    showXAxisLabels: currentChartModel.showXAxisLabels,
+                                    showYAxisLabels: currentChartModel.showYAxisLabels,
+                                    size: currentChartModel.size,
+                                    position: currentChartModel.position,
+                                  );
+                                });
+                                setModalState(() {});
+                              },
+                            ),
+                          ]),
+                          const SizedBox(height: 35),
+                        ] else
+                          const SizedBox(height: 20),
+                        // Visual Elements Section
+                        _buildSectionHeader('ERSCHEINUNGSBILD'),
+                        _buildGroupedSection([
+                          _buildToggleRow(
+                            icon: CupertinoIcons.circle_fill,
+                            title: 'Datenpunkte',
+                            value: currentChartModel.showDataPoints,
+                            onChanged: (value) {
+                              setState(() {
+                                openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                  id: currentChartModel.id,
+                                  title: currentChartModel.title,
+                                  displayRange: currentChartModel.displayRange,
+                                  showTimeControls: currentChartModel.showTimeControls,
+                                  showGrid: currentChartModel.showGrid,
+                                  showLegend: currentChartModel.showLegend,
+                                  triggerEnabled: currentChartModel.triggerEnabled,
+                                  upperThreshold: currentChartModel.upperThreshold,
+                                  lowerThreshold: currentChartModel.lowerThreshold,
+                                  lineThickness: currentChartModel.lineThickness,
+                                  showDataPoints: value,
+                                  pointRadius: currentChartModel.pointRadius,
+                                  showLines: currentChartModel.showLines,
+                                  showXAxisLabels: currentChartModel.showXAxisLabels,
+                                  showYAxisLabels: currentChartModel.showYAxisLabels,
+                                  size: currentChartModel.size,
+                                  position: currentChartModel.position,
+                                );
+                              });
+                              setModalState(() {});
+                            },
+                          ),
+                          if (currentChartModel.showDataPoints) ...[
+                            _buildDivider(),
+                            _buildSliderRow(
+                              title: 'Punktgröße',
+                              value: currentChartModel.pointRadius,
+                              min: 0.5,
+                              max: 5.0,
+                              onChanged: (value) {
+                                setState(() {
+                                  openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                    id: currentChartModel.id,
+                                    title: currentChartModel.title,
+                                    displayRange: currentChartModel.displayRange,
+                                    showTimeControls: currentChartModel.showTimeControls,
+                                    showGrid: currentChartModel.showGrid,
+                                    showLegend: currentChartModel.showLegend,
+                                    triggerEnabled: currentChartModel.triggerEnabled,
+                                    upperThreshold: currentChartModel.upperThreshold,
+                                    lowerThreshold: currentChartModel.lowerThreshold,
+                                    lineThickness: currentChartModel.lineThickness,
+                                    showDataPoints: currentChartModel.showDataPoints,
+                                    pointRadius: value,
+                                    showLines: currentChartModel.showLines,
+                                    showXAxisLabels: currentChartModel.showXAxisLabels,
+                                    showYAxisLabels: currentChartModel.showYAxisLabels,
+                                    size: currentChartModel.size,
+                                    position: currentChartModel.position,
+                                  );
+                                });
+                                setModalState(() {});
+                              },
+                            ),
+                          ],
+                        ]),
                         
-                        // Linien anzeigen
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
+                        const SizedBox(height: 8),
+                        _buildGroupedSection([
+                          _buildToggleRow(
+                            icon: CupertinoIcons.graph_square,
+                            title: 'Linien',
+                            value: currentChartModel.showLines,
+                            onChanged: (value) {
+                              setState(() {
+                                openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                  id: currentChartModel.id,
+                                  title: currentChartModel.title,
+                                  displayRange: currentChartModel.displayRange,
+                                  showTimeControls: currentChartModel.showTimeControls,
+                                  showGrid: currentChartModel.showGrid,
+                                  showLegend: currentChartModel.showLegend,
+                                  triggerEnabled: currentChartModel.triggerEnabled,
+                                  upperThreshold: currentChartModel.upperThreshold,
+                                  lowerThreshold: currentChartModel.lowerThreshold,
+                                  lineThickness: currentChartModel.lineThickness,
+                                  showDataPoints: currentChartModel.showDataPoints,
+                                  pointRadius: currentChartModel.pointRadius,
+                                  showLines: value,
+                                  showXAxisLabels: currentChartModel.showXAxisLabels,
+                                  showYAxisLabels: currentChartModel.showYAxisLabels,
+                                  size: currentChartModel.size,
+                                  position: currentChartModel.position,
+                                );
+                              });
+                              setModalState(() {});
+                            },
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.show_chart, color: CupertinoColors.systemBlue),
-                                  const SizedBox(width: 12),
-                                  Text('Linien anzeigen', style: TextStyle(fontSize: 16)),
-                                ],
-                              ),
-                              CupertinoSwitch(
-                                value: showLines,
-                                onChanged: (value) {
-                                  setModalState(() {
-                                    showLines = value;
-                                  });
-                                },
-                              ),
-                            ],
+                          _buildDivider(),
+                          _buildSliderRow(
+                            title: 'Linienstärke',
+                            value: currentChartModel.lineThickness,
+                            min: 0.5,
+                            max: 5.0,
+                            onChanged: (value) {
+                              setState(() {
+                                openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                  id: currentChartModel.id,
+                                  title: currentChartModel.title,
+                                  displayRange: currentChartModel.displayRange,
+                                  showTimeControls: currentChartModel.showTimeControls,
+                                  showGrid: currentChartModel.showGrid,
+                                  showLegend: currentChartModel.showLegend,
+                                  triggerEnabled: currentChartModel.triggerEnabled,
+                                  upperThreshold: currentChartModel.upperThreshold,
+                                  lowerThreshold: currentChartModel.lowerThreshold,
+                                  lineThickness: value,
+                                  showDataPoints: currentChartModel.showDataPoints,
+                                  pointRadius: currentChartModel.pointRadius,
+                                  showLines: currentChartModel.showLines,
+                                  showXAxisLabels: currentChartModel.showXAxisLabels,
+                                  showYAxisLabels: currentChartModel.showYAxisLabels,
+                                  size: currentChartModel.size,
+                                  position: currentChartModel.position,
+                                );
+                              });
+                              setModalState(() {});
+                            },
                           ),
-                        ),
+                        ]),
                         
-                        // Linien-Dicke
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
+                        const SizedBox(height: 8),
+                        _buildGroupedSection([
+                          _buildToggleRow(
+                            icon: CupertinoIcons.grid,
+                            title: 'Raster',
+                            value: currentChartModel.showGrid,
+                            onChanged: (value) {
+                              setState(() {
+                                openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                  id: currentChartModel.id,
+                                  title: currentChartModel.title,
+                                  displayRange: currentChartModel.displayRange,
+                                  showTimeControls: currentChartModel.showTimeControls,
+                                  showGrid: value,
+                                  showLegend: currentChartModel.showLegend,
+                                  triggerEnabled: currentChartModel.triggerEnabled,
+                                  upperThreshold: currentChartModel.upperThreshold,
+                                  lowerThreshold: currentChartModel.lowerThreshold,
+                                  lineThickness: currentChartModel.lineThickness,
+                                  showDataPoints: currentChartModel.showDataPoints,
+                                  pointRadius: currentChartModel.pointRadius,
+                                  showLines: currentChartModel.showLines,
+                                  showXAxisLabels: currentChartModel.showXAxisLabels,
+                                  showYAxisLabels: currentChartModel.showYAxisLabels,
+                                  size: currentChartModel.size,
+                                  position: currentChartModel.position,
+                                );
+                              });
+                              setModalState(() {});
+                            },
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.line_weight, color: CupertinoColors.systemBlue),
-                                  const SizedBox(width: 12),
-                                  Text('Linien-Dicke', style: TextStyle(fontSize: 16)),
-                                  const Spacer(),
-                                  Text('${lineThickness.toStringAsFixed(1)}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              CupertinoSlider(
-                                value: lineThickness,
-                                min: 0.5,
-                                max: 5.0,
-                                divisions: 9,
-                                onChanged: (value) {
-                                  setModalState(() {
-                                    lineThickness = value;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
+                        ]),
                         
-                        // Grid anzeigen
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
+                        const SizedBox(height: 35),
+                        // Axes Section
+                        _buildSectionHeader('ACHSEN'),
+                        _buildGroupedSection([
+                          _buildToggleRow(
+                            icon: CupertinoIcons.arrow_left_right,
+                            title: 'Horizontale Achse',
+                            subtitle: 'Zeit',
+                            value: currentChartModel.showXAxisLabels,
+                            onChanged: (value) {
+                              setState(() {
+                                openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                  id: currentChartModel.id,
+                                  title: currentChartModel.title,
+                                  displayRange: currentChartModel.displayRange,
+                                  showTimeControls: currentChartModel.showTimeControls,
+                                  showGrid: currentChartModel.showGrid,
+                                  showLegend: currentChartModel.showLegend,
+                                  triggerEnabled: currentChartModel.triggerEnabled,
+                                  upperThreshold: currentChartModel.upperThreshold,
+                                  lowerThreshold: currentChartModel.lowerThreshold,
+                                  lineThickness: currentChartModel.lineThickness,
+                                  showDataPoints: currentChartModel.showDataPoints,
+                                  pointRadius: currentChartModel.pointRadius,
+                                  showLines: currentChartModel.showLines,
+                                  showXAxisLabels: value,
+                                  showYAxisLabels: currentChartModel.showYAxisLabels,
+                                  size: currentChartModel.size,
+                                  position: currentChartModel.position,
+                                );
+                              });
+                              setModalState(() {});
+                            },
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.grid_on, color: CupertinoColors.systemBlue),
-                                  const SizedBox(width: 12),
-                                  Text('Gitter anzeigen', style: TextStyle(fontSize: 16)),
-                                ],
-                              ),
-                              CupertinoSwitch(
-                                value: showGrid,
-                                onChanged: (value) {
-                                  setModalState(() {
-                                    showGrid = value;
-                                  });
-                                },
-                              ),
-                            ],
+                          _buildDivider(),
+                          _buildToggleRow(
+                            icon: CupertinoIcons.arrow_up_down,
+                            title: 'Vertikale Achse',
+                            subtitle: 'Magnetfeld (mT)',
+                            value: currentChartModel.showYAxisLabels,
+                            onChanged: (value) {
+                              setState(() {
+                                openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                  id: currentChartModel.id,
+                                  title: currentChartModel.title,
+                                  displayRange: currentChartModel.displayRange,
+                                  showTimeControls: currentChartModel.showTimeControls,
+                                  showGrid: currentChartModel.showGrid,
+                                  showLegend: currentChartModel.showLegend,
+                                  triggerEnabled: currentChartModel.triggerEnabled,
+                                  upperThreshold: currentChartModel.upperThreshold,
+                                  lowerThreshold: currentChartModel.lowerThreshold,
+                                  lineThickness: currentChartModel.lineThickness,
+                                  showDataPoints: currentChartModel.showDataPoints,
+                                  pointRadius: currentChartModel.pointRadius,
+                                  showLines: currentChartModel.showLines,
+                                  showXAxisLabels: currentChartModel.showXAxisLabels,
+                                  showYAxisLabels: value,
+                                  size: currentChartModel.size,
+                                  position: currentChartModel.position,
+                                );
+                              });
+                              setModalState(() {});
+                            },
                           ),
-                        ),
-                        
-                        // X-Achsen Beschriftung
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.text_fields, color: CupertinoColors.systemRed),
-                                  const SizedBox(width: 12),
-                                  Text('X-Achse Beschriftung', style: TextStyle(fontSize: 16)),
-                                ],
-                              ),
-                              CupertinoSwitch(
-                                value: showXAxisLabels,
-                                onChanged: (value) {
-                                  setModalState(() {
-                                    showXAxisLabels = value;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        
-                        // Y-Achsen Beschriftung
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.text_rotation_none, color: CupertinoColors.activeBlue),
-                                  const SizedBox(width: 12),
-                                  Text('Y-Achse Beschriftung', style: TextStyle(fontSize: 16)),
-                                ],
-                              ),
-                              CupertinoSwitch(
-                                value: showYAxisLabels,
-                                onChanged: (value) {
-                                  setModalState(() {
-                                    showYAxisLabels = value;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
+                        ]),
+                        const SizedBox(height: 100),
                       ],
                     ),
                   ),
                 ],
               ),
+            ),
             );
           },
         );
