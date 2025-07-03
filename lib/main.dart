@@ -1313,6 +1313,9 @@ class RealtimeChartPainter extends CustomPainter {
   final bool showDataPoints;
   final double pointRadius;
   final bool showLines;
+  final bool triggerEnabled;
+  final double? upperThreshold;
+  final double? lowerThreshold;
 
   RealtimeChartPainter({
     required this.visibleData,
@@ -1322,6 +1325,9 @@ class RealtimeChartPainter extends CustomPainter {
     this.showDataPoints = false,
     this.pointRadius = 2.0,
     this.showLines = true,
+    this.triggerEnabled = false,
+    this.upperThreshold,
+    this.lowerThreshold,
   });
 
   @override
@@ -1357,11 +1363,62 @@ class RealtimeChartPainter extends CustomPainter {
         ..color = CupertinoColors.separator.withOpacity(0.2)
         ..strokeWidth = 0.5;
 
+      // Standard: 4 gleichmäßige horizontale Linien
       for (int i = 1; i < 5; i++) {
         final y = size.height * i / 5;
         canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+      }
+      
+      // Vertikale Grid-Linien bleiben gleich
+      for (int i = 1; i < 5; i++) {
         final x = size.width * i / 5;
         canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+      }
+    }
+
+    // Trigger-Linien zeichnen
+    if (triggerEnabled) {
+      final triggerPaint = Paint()
+        ..color = CupertinoColors.systemOrange
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke;
+
+      // Oberer Schwellenwert
+      if (upperThreshold != null && upperThreshold! >= minVal && upperThreshold! <= maxVal) {
+        final y = size.height - ((upperThreshold! - minVal) / (maxVal - minVal)) * size.height;
+        
+        // Gestrichelte Linie
+        final dashWidth = 5.0;
+        final dashSpace = 5.0;
+        var startX = 0.0;
+        
+        while (startX < size.width) {
+          canvas.drawLine(
+            Offset(startX, y),
+            Offset(math.min(startX + dashWidth, size.width), y),
+            triggerPaint,
+          );
+          startX += dashWidth + dashSpace;
+        }
+      }
+
+      // Unterer Schwellenwert
+      if (lowerThreshold != null && lowerThreshold! >= minVal && lowerThreshold! <= maxVal) {
+        final y = size.height - ((lowerThreshold! - minVal) / (maxVal - minVal)) * size.height;
+        
+        // Gestrichelte Linie
+        final dashWidth = 5.0;
+        final dashSpace = 5.0;
+        var startX = 0.0;
+        
+        while (startX < size.width) {
+          canvas.drawLine(
+            Offset(startX, y),
+            Offset(math.min(startX + dashWidth, size.width), y),
+            triggerPaint,
+          );
+          startX += dashWidth + dashSpace;
+        }
       }
     }
 
@@ -1472,6 +1529,8 @@ class RealtimeStreamChart extends StatefulWidget {
   final Stream<List<SensorReading>> dataStream; // Akzeptiert jetzt Listen
   final bool isSmall;
   final Function(ChartWidgetModel)? onModelUpdate; // NEU: Callback für Zeitfenster-Änderungen
+  final bool isRecording;
+  final Function(bool)? onRecordingChanged;
 
   const RealtimeStreamChart({
     Key? key,
@@ -1479,6 +1538,8 @@ class RealtimeStreamChart extends StatefulWidget {
     required this.dataStream,
     required this.isSmall,
     this.onModelUpdate, // Optional
+    this.isRecording = false,
+    this.onRecordingChanged,
   }) : super(key: key);
 
   @override
@@ -1522,6 +1583,42 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
         final cutoffTime = newReadings.last.timestamp.subtract(Duration(seconds: widget.model.displayRange));
         while (_buffer.isNotEmpty && _buffer.first.timestamp.isBefore(cutoffTime)) {
           _buffer.removeFirst();
+        }
+        
+        // Trigger-Überprüfung - prüfe ALLE neuen Werte
+        if (widget.model.triggerEnabled && widget.isRecording && widget.onRecordingChanged != null && !_isPaused) {
+          bool triggerExceeded = false;
+          
+          // Prüfe jeden neuen Wert, nicht nur den letzten
+          for (final reading in newReadings) {
+            if (widget.model.upperThreshold != null &&
+                (reading.x > widget.model.upperThreshold! || reading.y > widget.model.upperThreshold!)) {
+              triggerExceeded = true;
+              break;
+            }
+            
+            if (widget.model.lowerThreshold != null &&
+                (reading.x < widget.model.lowerThreshold! || reading.y < widget.model.lowerThreshold!)) {
+              triggerExceeded = true;
+              break;
+            }
+          }
+          
+          if (triggerExceeded) {
+            // Pausiere sofort ohne Verzögerung
+            setState(() {
+              _isPaused = true;
+            });
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Aufnahme pausiert: Trigger-Schwellenwert überschritten'),
+                  backgroundColor: CupertinoColors.systemOrange,
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+          }
         }
       }
       
@@ -1803,6 +1900,7 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                             } else {
                               formattedValue = value.toStringAsFixed(0);
                             }
+                            
                             return Text(
                               formattedValue,
                               style: TextStyle(
@@ -1833,6 +1931,9 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                           showDataPoints: widget.model.showDataPoints,
                           pointRadius: widget.model.pointRadius,
                           showLines: widget.model.showLines,
+                          triggerEnabled: widget.model.triggerEnabled,
+                          upperThreshold: widget.model.upperThreshold,
+                          lowerThreshold: widget.model.lowerThreshold,
                         ),
                         size: Size.infinite,
                       ),
@@ -4098,6 +4199,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
           model: model,
           dataStream: homePageState._sensorDataManager.stream, // Direkt an den schnellen Datenstrom anschließen
           isSmall: isSmall,
+          isRecording: widget.isRecording,
+          onRecordingChanged: widget.onRecordingChanged,
           onModelUpdate: (updatedModel) {
             setState(() {
               for (int i = 0; i < openTabs.length; i++) {
@@ -4138,6 +4241,19 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     }
   }
 
+  double _calculateGridInterval(double minValue, double maxValue, ChartWidgetModel model) {
+    double range = maxValue - minValue;
+    // Berechne ein schönes Intervall basierend auf der Größenordnung
+    double step = math.pow(10, (math.log(range) / math.ln10).floor()).toDouble() / 10;
+    if (step < 0.1) step = 0.1; // Mindestens 0.1 Schritte
+    
+    // Stelle sicher, dass wir 4-10 Intervalle haben
+    while (range / step > 10) step *= 2;
+    while (range / step < 4) step /= 2;
+    
+    return step;
+  }
+
   Widget _buildChartContentOld(ChartWidgetModel model, List<SensorReading> data, bool isSmall) {
     if (data.isEmpty) {
       return Center(
@@ -4161,33 +4277,35 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
         reading.timestamp.isAfter(startTime)
     ).toList();
 
-    // Trigger-Überprüfung: Stoppe Aufnahme wenn Schwellenwert überschritten
+    // Trigger-Überprüfung: Pausiere Aufnahme wenn Schwellenwert überschritten
     if (model.triggerEnabled && widget.isRecording && recentData.isNotEmpty) {
-      final lastReading = recentData.last;
       bool triggerExceeded = false;
 
-      if (model.upperThreshold != null &&
-          (lastReading.x > model.upperThreshold! || lastReading.y > model.upperThreshold!)) {
-        triggerExceeded = true;
-      }
+      // Prüfe alle aktuellen Datenpunkte
+      for (final reading in recentData) {
+        if (model.upperThreshold != null &&
+            (reading.x > model.upperThreshold! || reading.y > model.upperThreshold!)) {
+          triggerExceeded = true;
+          break;
+        }
 
-      if (model.lowerThreshold != null &&
-          (lastReading.x < model.lowerThreshold! || lastReading.y < model.lowerThreshold!)) {
-        triggerExceeded = true;
+        if (model.lowerThreshold != null &&
+            (reading.x < model.lowerThreshold! || reading.y < model.lowerThreshold!)) {
+          triggerExceeded = true;
+          break;
+        }
       }
 
       if (triggerExceeded) {
-        // Stoppe die Aufnahme
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          widget.onRecordingChanged(false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Aufnahme gestoppt: Trigger-Schwellenwert überschritten'),
-              backgroundColor: CupertinoColors.systemOrange,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        });
+        // Pausiere sofort ohne Verzögerung
+        widget.onRecordingChanged(false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Aufnahme pausiert: Trigger-Schwellenwert überschritten\nDrücken Sie Play zum Fortsetzen'),
+            backgroundColor: CupertinoColors.systemOrange,
+            duration: Duration(seconds: 4),
+          ),
+        );
       }
     }
 
@@ -4231,9 +4349,38 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     final ySensorValues = dataToDisplay.map((r) => r.y).toList();
 
     final allValues = [...xSensorValues, ...ySensorValues];
-    final minValue = allValues.isNotEmpty ? allValues.reduce(math.min) : 0;
-    final maxValue = allValues.isNotEmpty ? allValues.reduce(math.max) : 100;
-    final padding = (maxValue - minValue) * 0.1;
+    final dataMin = allValues.isNotEmpty ? allValues.reduce(math.min) : 0;
+    final dataMax = allValues.isNotEmpty ? allValues.reduce(math.max) : 100;
+    
+    // Berechne schöne Achsengrenzen
+    final range = dataMax - dataMin;
+    double interval;
+    
+    if (range == 0) {
+      interval = 1.0;
+    } else {
+      // Finde ein schönes Intervall (0.1, 0.2, 0.5, 1, 2, 5, 10, etc.)
+      final rawInterval = range / 4; // Wir wollen etwa 4-5 Intervalle
+      final magnitude = math.pow(10, (math.log(rawInterval) / math.ln10).floor()).toDouble();
+      final normalized = rawInterval / magnitude;
+      
+      if (normalized <= 1.5) {
+        interval = magnitude;
+      } else if (normalized <= 3) {
+        interval = 2 * magnitude;
+      } else if (normalized <= 7) {
+        interval = 5 * magnitude;
+      } else {
+        interval = 10 * magnitude;
+      }
+    }
+    
+    // Runde min/max auf Vielfache des Intervalls
+    final minValue = (dataMin / interval).floor() * interval;
+    final maxValue = ((dataMax / interval).ceil() + 1) * interval;
+    
+    // Berechne X-Achsen Intervall
+    final xInterval = (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 4 : (actualMaxX - actualMinX) / 5;
 
     return Column(
       children: [
@@ -4366,14 +4513,14 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                 clipData: FlClipData.all(),
                 minX: actualMinX,
                 maxX: actualMaxX,
-                minY: minValue - padding,
-                maxY: maxValue + padding,
+                minY: minValue,
+                maxY: maxValue,
                 gridData: FlGridData(
                   show: model.showGrid,
                   drawVerticalLine: true,
                   drawHorizontalLine: true,
-                  horizontalInterval: (maxValue - minValue) / 5,
-                  verticalInterval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 5 : (actualMaxX - actualMinX) / 4,
+                  horizontalInterval: interval,
+                  verticalInterval: xInterval,
                   getDrawingHorizontalLine: (value) {
                     return FlLine(
                       color: CupertinoColors.systemGrey4.withOpacity(0.3),
@@ -4393,7 +4540,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                     sideTitles: SideTitles(
                       showTitles: !isSmall,
                       reservedSize: 40,
-                      interval: (maxValue - minValue) / 4,
+                      interval: interval,
                       getTitlesWidget: (value, meta) => Padding(
                         padding: const EdgeInsets.only(right: 4),
                         child: Text(
@@ -4411,7 +4558,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                     sideTitles: SideTitles(
                       showTitles: !isSmall,
                       reservedSize: 30,
-                      interval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 4 : (actualMaxX - actualMinX) / 5,
+                      interval: xInterval,
                       getTitlesWidget: (value, meta) {
                         // Zeige Zeitangaben relativ zur aktuellen Zeit
                         final seconds = model.displayRange - value;
@@ -6153,6 +6300,225 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     );
   }
 
+  Widget _buildThresholdRow({
+    required String title,
+    required double? value,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            const SizedBox(width: 42),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
+            Text(
+              value?.toStringAsFixed(2) ?? 'Nicht gesetzt',
+              style: TextStyle(
+                fontSize: 17,
+                color: value != null 
+                    ? CupertinoColors.label.resolveFrom(context)
+                    : CupertinoColors.secondaryLabel.resolveFrom(context),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              CupertinoIcons.chevron_forward,
+              size: 16,
+              color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<double?> _showThresholdDialog(
+    BuildContext context,
+    String title,
+    double? currentValue,
+  ) async {
+    final controller = TextEditingController(
+      text: currentValue?.toString() ?? '',
+    );
+    
+    return showCupertinoDialog<double?>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => CupertinoAlertDialog(
+          title: Text(title),
+          content: Container(
+            padding: const EdgeInsets.only(top: 16),
+            constraints: const BoxConstraints(maxHeight: 400),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 200,
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemGrey6,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    controller.text.isEmpty ? 'z.B. 100.0' : controller.text,
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: controller.text.isEmpty 
+                          ? CupertinoColors.placeholderText 
+                          : CupertinoColors.label,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildNumberKeypad(controller, setState),
+              ],
+            ),
+          ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () {
+              String text = controller.text.replaceAll(',', '.');
+              final value = double.tryParse(text);
+              Navigator.pop(context, value);
+            },
+            child: const Text('Festlegen'),
+          ),
+        ],
+      ),
+    ),
+  );
+  }
+
+  Widget _buildNumberKeypad(TextEditingController controller, StateSetter setState) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildKeypadButton('1', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('2', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('3', controller, setState),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildKeypadButton('4', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('5', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('6', controller, setState),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildKeypadButton('7', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('8', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('9', controller, setState),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildKeypadButton('-', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('0', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('⌫', controller, setState, isBackspace: true),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildKeypadButton(',', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('.', controller, setState),
+            const SizedBox(width: 8),
+            _buildKeypadButton('C', controller, setState, isClear: true),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildKeypadButton(
+    String label, 
+    TextEditingController controller,
+    StateSetter setState,
+    {bool isBackspace = false, bool isClear = false}
+  ) {
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: () {
+        setState(() {
+          if (isClear) {
+            controller.clear();
+          } else if (isBackspace) {
+            if (controller.text.isNotEmpty) {
+              controller.text = controller.text.substring(0, controller.text.length - 1);
+            }
+          } else {
+            if (label == ',' || label == '.') {
+              if (!controller.text.contains(',') && !controller.text.contains('.')) {
+                controller.text += label;
+              }
+            } else if (label == '-') {
+              if (controller.text.isEmpty || 
+                  (!controller.text.startsWith('-') && controller.selection.baseOffset == 0)) {
+                controller.text = '-${controller.text}';
+              }
+            } else {
+              controller.text += label;
+            }
+          }
+        });
+      },
+      child: Container(
+        width: 60,
+        height: 50,
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemGrey5,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w500,
+            color: CupertinoColors.label,
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showChartSettings(int tabIndex, int widgetIndex, ChartWidgetModel chartModel) {
     showModalBottomSheet(
       context: context,
@@ -6507,6 +6873,116 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                               setModalState(() {});
                             },
                           ),
+                        ]),
+                        
+                        const SizedBox(height: 35),
+                        // Trigger Section
+                        _buildSectionHeader('TRIGGER'),
+                        _buildGroupedSection([
+                          _buildToggleRow(
+                            icon: CupertinoIcons.graph_square_fill,
+                            title: 'Schwellenwerte',
+                            subtitle: 'Obere und untere Grenzlinien',
+                            value: currentChartModel.triggerEnabled,
+                            onChanged: (value) {
+                              setState(() {
+                                openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                  id: currentChartModel.id,
+                                  title: currentChartModel.title,
+                                  displayRange: currentChartModel.displayRange,
+                                  showTimeControls: currentChartModel.showTimeControls,
+                                  showGrid: currentChartModel.showGrid,
+                                  showLegend: currentChartModel.showLegend,
+                                  triggerEnabled: value,
+                                  upperThreshold: currentChartModel.upperThreshold,
+                                  lowerThreshold: currentChartModel.lowerThreshold,
+                                  lineThickness: currentChartModel.lineThickness,
+                                  showDataPoints: currentChartModel.showDataPoints,
+                                  pointRadius: currentChartModel.pointRadius,
+                                  showLines: currentChartModel.showLines,
+                                  showXAxisLabels: currentChartModel.showXAxisLabels,
+                                  showYAxisLabels: currentChartModel.showYAxisLabels,
+                                  size: currentChartModel.size,
+                                  position: currentChartModel.position,
+                                );
+                              });
+                              setModalState(() {});
+                            },
+                          ),
+                          if (currentChartModel.triggerEnabled) ...[
+                            _buildDivider(),
+                            _buildThresholdRow(
+                              title: 'Oberer Wert',
+                              value: currentChartModel.upperThreshold,
+                              onTap: () async {
+                                final result = await _showThresholdDialog(
+                                  context,
+                                  'Oberer Schwellenwert',
+                                  currentChartModel.upperThreshold,
+                                );
+                                if (result != null) {
+                                  setState(() {
+                                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                      id: currentChartModel.id,
+                                      title: currentChartModel.title,
+                                      displayRange: currentChartModel.displayRange,
+                                      showTimeControls: currentChartModel.showTimeControls,
+                                      showGrid: currentChartModel.showGrid,
+                                      showLegend: currentChartModel.showLegend,
+                                      triggerEnabled: currentChartModel.triggerEnabled,
+                                      upperThreshold: result,
+                                      lowerThreshold: currentChartModel.lowerThreshold,
+                                      lineThickness: currentChartModel.lineThickness,
+                                      showDataPoints: currentChartModel.showDataPoints,
+                                      pointRadius: currentChartModel.pointRadius,
+                                      showLines: currentChartModel.showLines,
+                                      showXAxisLabels: currentChartModel.showXAxisLabels,
+                                      showYAxisLabels: currentChartModel.showYAxisLabels,
+                                      size: currentChartModel.size,
+                                      position: currentChartModel.position,
+                                    );
+                                  });
+                                  setModalState(() {});
+                                }
+                              },
+                            ),
+                            _buildDivider(),
+                            _buildThresholdRow(
+                              title: 'Unterer Wert',
+                              value: currentChartModel.lowerThreshold,
+                              onTap: () async {
+                                final result = await _showThresholdDialog(
+                                  context,
+                                  'Unterer Schwellenwert',
+                                  currentChartModel.lowerThreshold,
+                                );
+                                if (result != null) {
+                                  setState(() {
+                                    openTabs[tabIndex].widgets[widgetIndex] = ChartWidgetModel(
+                                      id: currentChartModel.id,
+                                      title: currentChartModel.title,
+                                      displayRange: currentChartModel.displayRange,
+                                      showTimeControls: currentChartModel.showTimeControls,
+                                      showGrid: currentChartModel.showGrid,
+                                      showLegend: currentChartModel.showLegend,
+                                      triggerEnabled: currentChartModel.triggerEnabled,
+                                      upperThreshold: currentChartModel.upperThreshold,
+                                      lowerThreshold: result,
+                                      lineThickness: currentChartModel.lineThickness,
+                                      showDataPoints: currentChartModel.showDataPoints,
+                                      pointRadius: currentChartModel.pointRadius,
+                                      showLines: currentChartModel.showLines,
+                                      showXAxisLabels: currentChartModel.showXAxisLabels,
+                                      showYAxisLabels: currentChartModel.showYAxisLabels,
+                                      size: currentChartModel.size,
+                                      position: currentChartModel.position,
+                                    );
+                                  });
+                                  setModalState(() {});
+                                }
+                              },
+                            ),
+                          ],
                         ]),
                         const SizedBox(height: 100),
                       ],
