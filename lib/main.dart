@@ -1322,6 +1322,7 @@ class RealtimeChartPainter extends CustomPainter {
   final double axisMaxY;
   final double yInterval;
   final List<double>? gridYPositions; // NEU: Exakte Grid-Positionen
+  final List<double>? gridXPositions; // NEU: Exakte X-Grid-Positionen
 
   RealtimeChartPainter({
     required this.visibleData,
@@ -1339,6 +1340,7 @@ class RealtimeChartPainter extends CustomPainter {
     required this.axisMaxY,
     required this.yInterval,
     this.gridYPositions,
+    this.gridXPositions,
   });
 
   @override
@@ -1376,10 +1378,21 @@ class RealtimeChartPainter extends CustomPainter {
         }
       }
       
-      // Vertikale Linien bleiben visuell
-      for (int i = 1; i < 5; i++) {
-        final x = size.width * i / 5;
-        canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+      // Vertikale Grid-Linien: Verwende Positionen vom XAxisLabelPainter wenn verfügbar
+      if (gridXPositions != null && gridXPositions!.isNotEmpty) {
+        // Synchronisiert mit X-Achsen-Labels
+        for (double xPos in gridXPositions!) {
+          if (xPos > 0 && xPos < size.width) { // Keine Linie am Rand
+            canvas.drawLine(Offset(xPos, 0), Offset(xPos, size.height), gridPaint);
+          }
+        }
+      } else {
+        // Fallback: gleichmäßige Verteilung
+        double interval = XAxisLabelPainter.calculateNiceInterval(displayRange.toDouble());
+        for (double time = interval; time < displayRange; time += interval) {
+          double xPos = size.width - (time / displayRange) * size.width;
+          canvas.drawLine(Offset(xPos, 0), Offset(xPos, size.height), gridPaint);
+        }
       }
     }
 
@@ -1602,6 +1615,122 @@ class YAxisLabelPainter extends CustomPainter {
   }
 }
 
+class XAxisLabelPainter extends CustomPainter {
+  final double displayRange; // in Sekunden
+  final TextStyle labelStyle;
+  final Function(List<double>)? onPositionsCalculated; // Callback für Grid-Positionen
+
+  XAxisLabelPainter({
+    required this.displayRange,
+    required this.labelStyle,
+    this.onPositionsCalculated,
+  });
+
+  // Berechnet ein "schönes" Intervall basierend auf dem Zeitbereich
+  static double calculateNiceInterval(double range) {
+    // Ziel: 4-8 Labels auf der X-Achse
+    double roughInterval = range / 6;
+    
+    // Finde die nächste "schöne" Zahl
+    if (range <= 10) {
+      // Für kleine Bereiche: 1, 2, 5 Sekunden
+      if (roughInterval <= 1) return 1;
+      if (roughInterval <= 2) return 2;
+      return 5;
+    } else if (range <= 60) {
+      // Für mittlere Bereiche: 5, 10, 15, 30 Sekunden
+      if (roughInterval <= 5) return 5;
+      if (roughInterval <= 10) return 10;
+      if (roughInterval <= 15) return 15;
+      return 30;
+    } else if (range <= 600) {
+      // Für größere Bereiche: 30s, 1m, 2m, 5m
+      if (roughInterval <= 30) return 30;
+      if (roughInterval <= 60) return 60;
+      if (roughInterval <= 120) return 120;
+      return 300;
+    } else {
+      // Für sehr große Bereiche: 5m, 10m, 30m, 1h
+      if (roughInterval <= 300) return 300;
+      if (roughInterval <= 600) return 600;
+      if (roughInterval <= 1800) return 1800;
+      return 3600;
+    }
+  }
+
+  String _formatTimeLabel(double seconds) {
+    if (seconds == 0) return 'Jetzt';
+    
+    double absSeconds = seconds.abs();
+    String prefix = seconds < 0 ? '-' : '';
+    
+    if (absSeconds < 60) {
+      return '$prefix${absSeconds.toInt()}s';
+    } else if (absSeconds < 3600) {
+      double minutes = absSeconds / 60;
+      if (minutes == minutes.toInt()) {
+        return '$prefix${minutes.toInt()}m';
+      } else {
+        return '$prefix${minutes.toStringAsFixed(1)}m';
+      }
+    } else {
+      double hours = absSeconds / 3600;
+      if (hours == hours.toInt()) {
+        return '$prefix${hours.toInt()}h';
+      } else {
+        return '$prefix${hours.toStringAsFixed(1)}h';
+      }
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    );
+    
+    if (displayRange <= 0) return;
+    
+    // Berechne ein schönes Intervall
+    double interval = calculateNiceInterval(displayRange);
+    List<double> positions = [];
+    
+    // Zeichne Labels von rechts nach links (Jetzt -> Vergangenheit)
+    for (double time = 0; time <= displayRange + interval * 0.1; time += interval) {
+      if (time <= displayRange) {
+        // Position berechnen (0 = rechts = Jetzt, displayRange = links = Vergangenheit)
+        double xPos = size.width - (time / displayRange) * size.width;
+        positions.add(xPos);
+        
+        // Label formatieren
+        textPainter.text = TextSpan(
+          text: _formatTimeLabel(-time), // Negativ für Vergangenheit
+          style: labelStyle,
+        );
+        textPainter.layout();
+        
+        // Label zentriert unter der Position zeichnen
+        final offset = Offset(
+          xPos - textPainter.width / 2,
+          size.height / 2 - textPainter.height / 2,
+        );
+        textPainter.paint(canvas, offset);
+      }
+    }
+    
+    // Positionen an Callback weitergeben (für vertikale Grid-Linien)
+    if (onPositionsCalculated != null) {
+      onPositionsCalculated!(positions);
+    }
+  }
+
+  @override
+  bool shouldRepaint(XAxisLabelPainter oldDelegate) {
+    return oldDelegate.displayRange != displayRange;
+  }
+}
+
 // Echtzeit-Chart Widget mit Stream - jetzt mit Paket-Verarbeitung!
 class RealtimeStreamChart extends StatefulWidget {
   final ChartWidgetModel model;
@@ -1631,6 +1760,7 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
   StreamSubscription<List<SensorReading>>? _subscription;
   Timer? _uiUpdateTimer; // NEU: Timer für UI-Updates mit 60 FPS
   bool _isPaused = false; // NEU: Zustand für Pause/Play
+  List<double> _gridXPositions = []; // NEU: X-Grid-Positionen vom XAxisLabelPainter
 
   @override
   void initState() {
@@ -1741,15 +1871,7 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
         // Zeitfenster-Kontrollen - Apple Design
         if (widget.model.showTimeControls) Container(
           height: 44,
-          decoration: BoxDecoration(
-            color: CupertinoColors.systemBackground,
-            border: Border(
-              bottom: BorderSide(
-                color: CupertinoColors.separator,
-                width: 0.5,
-              ),
-            ),
-          ),
+          color: CupertinoColors.systemBackground,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -2006,6 +2128,7 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                           axisMaxY: axisMaxY,
                           yInterval: niceInterval,
                           gridYPositions: null, // Wird intern berechnet
+                          gridXPositions: _gridXPositions, // X-Grid-Positionen weitergeben
                         ),
                         size: Size.infinite,
                       ),
@@ -2021,28 +2144,43 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                       height: 30,
                       child: Container(
                         color: CupertinoColors.systemBackground,
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List.generate(5, (index) {
-                            final seconds = widget.model.displayRange - (index * widget.model.displayRange / 4);
-                            String label;
-                            if (seconds == 0) {
-                              label = 'Jetzt';
-                            } else if (seconds < 60) {
-                              label = '-${seconds.toInt()}s';
-                            } else {
-                              label = '-${(seconds / 60).toStringAsFixed(0)}m';
-                            }
-                            return Text(
-                              label,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                                color: CupertinoColors.secondaryLabel,
-                              ),
-                            );
-                          }),
+                        child: CustomPaint(
+                          painter: XAxisLabelPainter(
+                            displayRange: widget.model.displayRange.toDouble(),
+                            labelStyle: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: CupertinoColors.secondaryLabel,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                            onPositionsCalculated: (positions) {
+                              // X-Positionen für vertikale Grid-Linien speichern
+                              // Nach dem Frame aktualisieren, um setState während paint zu vermeiden
+                              if (mounted) {
+                                // Prüfen ob sich die Positionen geändert haben
+                                bool hasChanged = _gridXPositions.length != positions.length;
+                                if (!hasChanged && _gridXPositions.length == positions.length) {
+                                  for (int i = 0; i < positions.length; i++) {
+                                    if ((_gridXPositions[i] - positions[i]).abs() > 0.1) {
+                                      hasChanged = true;
+                                      break;
+                                    }
+                                  }
+                                }
+                                
+                                if (hasChanged) {
+                                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                                    if (mounted) {
+                                      setState(() {
+                                        _gridXPositions = positions;
+                                      });
+                                    }
+                                  });
+                                }
+                              }
+                            },
+                          ),
+                          size: Size.infinite,
                         ),
                       ),
                     ),
