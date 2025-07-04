@@ -1316,6 +1316,12 @@ class RealtimeChartPainter extends CustomPainter {
   final bool triggerEnabled;
   final double? upperThreshold;
   final double? lowerThreshold;
+  
+  // --- NEUE, FINALE PARAMETER FÜR DIE SKALIERUNG ---
+  final double axisMinY;
+  final double axisMaxY;
+  final double yInterval;
+  final List<double>? gridYPositions; // NEU: Exakte Grid-Positionen
 
   RealtimeChartPainter({
     required this.visibleData,
@@ -1328,6 +1334,11 @@ class RealtimeChartPainter extends CustomPainter {
     this.triggerEnabled = false,
     this.upperThreshold,
     this.lowerThreshold,
+    // --- NEU: DIESE PARAMETER HINZUFÜGEN ---
+    required this.axisMinY,
+    required this.axisMaxY,
+    required this.yInterval,
+    this.gridYPositions,
   });
 
   @override
@@ -1338,24 +1349,14 @@ class RealtimeChartPainter extends CustomPainter {
 
     // Die älteste Zeit in den sichtbaren Daten als Startzeit verwenden
     final startTime = visibleData.first.timestamp;
-
-    // Min/Max für Skalierung
-    double minVal = double.infinity, maxVal = -double.infinity;
-
-    for (var reading in visibleData) {
-      minVal = math.min(minVal, math.min(reading.x, reading.y));
-      maxVal = math.max(maxVal, math.max(reading.x, reading.y));
+    
+    // HILFSFUNKTION, um einen Daten-Wert in eine Y-Pixel-Position umzuwandeln
+    // WICHTIG: Muss exakt gleiche Berechnung wie YAxisLabelPainter verwenden!
+    double getYPos(double value) {
+      final double range = axisMaxY - axisMinY;
+      if (range == 0) return size.height / 2;
+      return size.height - ((value - axisMinY) / range) * size.height;
     }
-
-    if (minVal == maxVal) {
-      minVal -= 1;
-      maxVal += 1;
-    }
-
-    final range = maxVal - minVal;
-    final padding = range * 0.1;
-    minVal -= padding;
-    maxVal += padding;
 
     // Grid
     if (showGrid) {
@@ -1363,13 +1364,19 @@ class RealtimeChartPainter extends CustomPainter {
         ..color = CupertinoColors.separator.withOpacity(0.2)
         ..strokeWidth = 0.5;
 
-      // Standard: 4 gleichmäßige horizontale Linien
-      for (int i = 1; i < 5; i++) {
-        final y = size.height * i / 5;
-        canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+      // Horizontale Grid-Linien: EXAKT gleiche Berechnung wie YAxisLabelPainter
+      if (yInterval > 0 && (axisMaxY - axisMinY) > 0) {
+        // Gleiche Schleife wie in YAxisLabelPainter.paint()
+        for (double val = axisMinY; val <= axisMaxY + yInterval * 0.1; val += yInterval) {
+          if (val <= axisMaxY) {
+            // WICHTIG: Exakt gleiche Berechnung wie in YAxisLabelPainter
+            double yPos = size.height - ((val - axisMinY) / (axisMaxY - axisMinY)) * size.height;
+            canvas.drawLine(Offset(0, yPos), Offset(size.width, yPos), gridPaint);
+          }
+        }
       }
       
-      // Vertikale Grid-Linien bleiben gleich
+      // Vertikale Linien bleiben visuell
       for (int i = 1; i < 5; i++) {
         final x = size.width * i / 5;
         canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
@@ -1384,8 +1391,8 @@ class RealtimeChartPainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
 
       // Oberer Schwellenwert
-      if (upperThreshold != null && upperThreshold! >= minVal && upperThreshold! <= maxVal) {
-        final y = size.height - ((upperThreshold! - minVal) / (maxVal - minVal)) * size.height;
+      if (upperThreshold != null && upperThreshold! >= axisMinY && upperThreshold! <= axisMaxY) {
+        final y = getYPos(upperThreshold!);
         
         // Gestrichelte Linie
         final dashWidth = 5.0;
@@ -1403,8 +1410,8 @@ class RealtimeChartPainter extends CustomPainter {
       }
 
       // Unterer Schwellenwert
-      if (lowerThreshold != null && lowerThreshold! >= minVal && lowerThreshold! <= maxVal) {
-        final y = size.height - ((lowerThreshold! - minVal) / (maxVal - minVal)) * size.height;
+      if (lowerThreshold != null && lowerThreshold! >= axisMinY && lowerThreshold! <= axisMaxY) {
+        final y = getYPos(lowerThreshold!);
         
         // Gestrichelte Linie
         final dashWidth = 5.0;
@@ -1449,7 +1456,7 @@ class RealtimeChartPainter extends CustomPainter {
         final x = (timeDiff / displayRange) * size.width;
 
         // X-Achse
-        final xY = size.height - ((reading.x - minVal) / (maxVal - minVal)) * size.height;
+        final xY = getYPos(reading.x);
         if (i == 0) {
           xPath.moveTo(x, xY);
         } else {
@@ -1457,7 +1464,7 @@ class RealtimeChartPainter extends CustomPainter {
         }
 
         // Y-Achse
-        final yY = size.height - ((reading.y - minVal) / (maxVal - minVal)) * size.height;
+        final yY = getYPos(reading.y);
         if (i == 0) {
           yPath.moveTo(x, yY);
         } else {
@@ -1493,11 +1500,11 @@ class RealtimeChartPainter extends CustomPainter {
         final x = (timeDiff / displayRange) * size.width;
         
         // X-Achse Punkt
-        final xY = size.height - ((reading.x - minVal) / (maxVal - minVal)) * size.height;
+        final xY = getYPos(reading.x);
         canvas.drawCircle(Offset(x, xY), pointRadius, xPointPaint);
         
         // Y-Achse Punkt
-        final yY = size.height - ((reading.y - minVal) / (maxVal - minVal)) * size.height;
+        final yY = getYPos(reading.y);
         canvas.drawCircle(Offset(x, yY), pointRadius, yPointPaint);
       }
       
@@ -1507,10 +1514,10 @@ class RealtimeChartPainter extends CustomPainter {
         final timeDiff = lastReading.timestamp.difference(startTime).inMilliseconds / 1000.0;
         final x = (timeDiff / displayRange) * size.width;
         
-        final xY = size.height - ((lastReading.x - minVal) / (maxVal - minVal)) * size.height;
+        final xY = getYPos(lastReading.x);
         canvas.drawCircle(Offset(x, xY), pointRadius, xPointPaint);
         
-        final yY = size.height - ((lastReading.y - minVal) / (maxVal - minVal)) * size.height;
+        final yY = getYPos(lastReading.y);
         canvas.drawCircle(Offset(x, yY), pointRadius, yPointPaint);
       }
     }
@@ -1518,8 +1525,80 @@ class RealtimeChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(RealtimeChartPainter oldDelegate) {
-    // Nur neu zeichnen, wenn sich die Daten tatsächlich geändert haben
-    return oldDelegate.visibleData != visibleData;
+    return oldDelegate.visibleData != visibleData ||
+           oldDelegate.axisMinY != axisMinY ||
+           oldDelegate.axisMaxY != axisMaxY;
+  }
+}
+
+class YAxisLabelPainter extends CustomPainter {
+  final double axisMin;
+  final double axisMax;
+  final double interval;
+  final TextStyle labelStyle;
+  final Function(List<double>)? onPositionsCalculated; // Callback für Grid-Positionen
+
+  YAxisLabelPainter({
+    required this.axisMin,
+    required this.axisMax,
+    required this.interval,
+    required this.labelStyle,
+    this.onPositionsCalculated,
+  });
+
+  String _formatLabel(double value) {
+    if (value.abs() < 0.01 && value != 0) return value.toStringAsExponential(1);
+    if (value.abs() < 10) return value.toStringAsFixed(1);
+    return value.toStringAsFixed(0);
+  }
+
+  // Diese Methode berechnet die Y-Positionen für die Labels UND das Grid
+  static List<double> calculateLabelPositions(double axisMin, double axisMax, double interval, double height) {
+    List<double> positions = [];
+    if (interval <= 0 || (axisMax - axisMin) <= 0) return positions;
+    
+    // Von unten nach oben, damit die Reihenfolge stimmt
+    for (double val = axisMin; val <= axisMax + interval * 0.1; val += interval) {
+      if (val <= axisMax) {
+        double yPos = height - ((val - axisMin) / (axisMax - axisMin)) * height;
+        positions.add(yPos);
+      }
+    }
+    return positions;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final textPainter = TextPainter(textDirection: TextDirection.ltr, textAlign: TextAlign.right);
+    if (interval <= 0) return;
+    
+    final double range = axisMax - axisMin;
+    if (range <= 0) return;
+
+    List<double> positions = [];
+    
+    // Labels zeichnen und Positionen sammeln
+    for (double val = axisMin; val <= axisMax + interval * 0.1; val += interval) {
+      if (val <= axisMax) {
+        double yPos = size.height - ((val - axisMin) / range) * size.height;
+        positions.add(yPos);
+        
+        textPainter.text = TextSpan(text: _formatLabel(val), style: labelStyle);
+        textPainter.layout();
+        final offset = Offset(size.width - 8 - textPainter.width, yPos - textPainter.height / 2);
+        textPainter.paint(canvas, offset);
+      }
+    }
+    
+    // Positionen an Callback weitergeben
+    if (onPositionsCalculated != null) {
+      onPositionsCalculated!(positions);
+    }
+  }
+
+  @override
+  bool shouldRepaint(YAxisLabelPainter oldDelegate) {
+    return oldDelegate.axisMin != axisMin || oldDelegate.axisMax != axisMax || oldDelegate.interval != interval;
   }
 }
 
@@ -1854,25 +1933,28 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              // Berechne Min/Max für Y-Achse
-              double minVal = double.infinity, maxVal = -double.infinity;
+              // --- 1. MIN/MAX DER DATEN FINDEN ---
+              double dataMin = 0.0, dataMax = 0.0;
               if (_buffer.isNotEmpty) {
-                for (var reading in _buffer) {
-                  minVal = math.min(minVal, math.min(reading.x, reading.y));
-                  maxVal = math.max(maxVal, math.max(reading.x, reading.y));
+                dataMin = _buffer.first.x;
+                dataMax = _buffer.first.x;
+                for (var r in _buffer) {
+                  dataMin = math.min(dataMin, math.min(r.x, r.y));
+                  dataMax = math.max(dataMax, math.max(r.x, r.y));
                 }
-                if (minVal == maxVal) {
-                  minVal -= 1;
-                  maxVal += 1;
-                }
-                final range = maxVal - minVal;
-                final padding = range * 0.1;
-                minVal -= padding;
-                maxVal += padding;
               } else {
-                minVal = -10;
-                maxVal = 10;
+                dataMin = -10; dataMax = 10;
               }
+              
+              // --- 2. "SCHÖNE" ACHSENWERTE BERECHNEN (DAS HERZSTÜCK) ---
+              final axisValues = _calculateNiceAxisValues(dataMin, dataMax, maxTicks: 5);
+              final double axisMinY = axisValues['axisMin']!;
+              final double axisMaxY = axisValues['axisMax']!;
+              final double niceInterval = axisValues['interval']!;
+              
+              // --- 3. BERECHNE DIE EXAKTEN GRID-POSITIONEN ---
+              // Diese werden später berechnet, wenn wir die tatsächliche Größe kennen
+              List<double> gridYPositions = [];
               
               return Stack(
                 children: [
@@ -1881,36 +1963,19 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                     Positioned(
                       left: 0,
                       top: 0,
-                      bottom: 0,
+                      bottom: widget.model.showXAxisLabels && !widget.isSmall ? 30 : 0, // WICHTIG: Gleiche Höhe wie Chart!
                       width: 40,
-                      child: Container(
-                        color: CupertinoColors.systemBackground,
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: List.generate(5, (index) {
-                            final value = maxVal - (index * (maxVal - minVal) / 4);
-                            // Formatiere Werte sinnvoll
-                            String formattedValue;
-                            if (value.abs() < 0.01) {
-                              formattedValue = '0';
-                            } else if (value.abs() < 10) {
-                              formattedValue = value.toStringAsFixed(1);
-                            } else {
-                              formattedValue = value.toStringAsFixed(0);
-                            }
-                            
-                            return Text(
-                              formattedValue,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w500,
-                                color: CupertinoColors.secondaryLabel,
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              ),
-                            );
-                          }),
+                      child: CustomPaint( // <-- NEU
+                        painter: YAxisLabelPainter(
+                          axisMin: axisMinY,
+                          axisMax: axisMaxY,
+                          interval: niceInterval,
+                          labelStyle: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: CupertinoColors.secondaryLabel,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
                         ),
                       ),
                     ),
@@ -1923,7 +1988,8 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                     bottom: widget.model.showXAxisLabels && !widget.isSmall ? 30 : 0,
                     child: RepaintBoundary(
                       child: CustomPaint(
-                        painter: RealtimeChartPainter(
+                        painter: RealtimeChartPainter( // <-- HIER IST DIE MAGIE
+                          // ... alle bisherigen Parameter ...
                           visibleData: _buffer.toList(growable: false),
                           displayRange: widget.model.displayRange,
                           showGrid: widget.model.showGrid,
@@ -1934,6 +2000,12 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                           triggerEnabled: widget.model.triggerEnabled,
                           upperThreshold: widget.model.upperThreshold,
                           lowerThreshold: widget.model.lowerThreshold,
+                          
+                          // *** Die neuen, synchronisierten Werte ***
+                          axisMinY: axisMinY,
+                          axisMaxY: axisMaxY,
+                          yInterval: niceInterval,
+                          gridYPositions: null, // Wird intern berechnet
                         ),
                         size: Size.infinite,
                       ),
@@ -13730,6 +13802,30 @@ double _calculateRMSNoiseInIsolate(List<double> values, double mean) {
     variance += math.pow(val - mean, 2);
   }
   return math.sqrt(variance / values.length);
+}
+
+// HILFSFUNKTION FÜR "SCHÖNE" ACHSENWERTE
+Map<String, double> _calculateNiceAxisValues(double dataMin, double dataMax, {int maxTicks = 5}) {
+  if (dataMin == dataMax) {
+    dataMin -= 1;
+    dataMax += 1;
+  }
+  double range = dataMax - dataMin;
+  if (range == 0) {
+    return {'axisMin': dataMin - 1, 'axisMax': dataMax + 1, 'interval': 0.5};
+  }
+  double roughInterval = range / (maxTicks - 1);
+  double magnitude = math.pow(10, (math.log(roughInterval) / math.ln10).floor()).toDouble();
+  double residual = roughInterval / magnitude;
+  double niceInterval;
+  if (residual < 1.5) niceInterval = 1 * magnitude;
+  else if (residual < 3) niceInterval = 2 * magnitude;
+  else if (residual < 7) niceInterval = 5 * magnitude;
+  else niceInterval = 10 * magnitude;
+  double axisMin = (dataMin / niceInterval).floor() * niceInterval;
+  double axisMax = (dataMax / niceInterval).ceil() * niceInterval;
+  if (axisMin == axisMax) axisMax += niceInterval;
+  return {'axisMin': axisMin, 'axisMax': axisMax, 'interval': niceInterval};
 }
 
 
