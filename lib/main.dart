@@ -1348,6 +1348,9 @@ class RealtimeChartPainter extends CustomPainter {
     // DIE GANZE FILTER-LOGIK WIRD HIER ENTFERNT!
     // Die Daten sind bereits vom Stream-Listener perfekt gefiltert!
     if (visibleData.isEmpty) return;
+    
+    // WICHTIG: Clipping-Rechteck setzen, um Zeichnungen außerhalb zu verhindern
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width, size.height));
 
     // Die älteste Zeit in den sichtbaren Daten als Startzeit verwenden
     final startTime = visibleData.first.timestamp;
@@ -1357,7 +1360,12 @@ class RealtimeChartPainter extends CustomPainter {
     double getYPos(double value) {
       final double range = axisMaxY - axisMinY;
       if (range == 0) return size.height / 2;
-      return size.height - ((value - axisMinY) / range) * size.height;
+      
+      // Berechne Position
+      double yPos = size.height - ((value - axisMinY) / range) * size.height;
+      
+      // Clamp auf sichtbaren Bereich (mit kleinem Puffer für Linienstärke)
+      return yPos.clamp(-10.0, size.height + 10.0);
     }
 
     // Grid
@@ -2502,6 +2510,8 @@ class AnalysisWorkspacePage extends StatefulWidget {
   final Function() onExportToCSV;
   final VoidCallback onClearHistory;
   final Function(bool)? onWidgetTouchChanged;
+  final int duty1;
+  final int duty2;
 
   const AnalysisWorkspacePage({
     Key? key,
@@ -2513,6 +2523,8 @@ class AnalysisWorkspacePage extends StatefulWidget {
     required this.onExportToCSV,
     required this.onClearHistory,
     this.onWidgetTouchChanged,
+    required this.duty1,
+    required this.duty2,
   }) : super(key: key);
 
   @override
@@ -2594,6 +2606,18 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     _autoScrollTimer?.cancel();
     // ENTFERNT: _uiUpdateTimer?.cancel() - Timer existiert nicht mehr
     super.dispose();
+  }
+  
+  @override
+  void didUpdateWidget(AnalysisWorkspacePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Aktualisiere Duty-Werte wenn sie sich ändern
+    if (oldWidget.duty1 != widget.duty1 || oldWidget.duty2 != widget.duty2) {
+      setState(() {
+        lastDuty1 = widget.duty1;
+        lastDuty2 = widget.duty2;
+      });
+    }
   }
 
   void _createSnapshot() {
@@ -5032,7 +5056,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
-            '$duty%',
+            '$duty',
             style: TextStyle(
               fontSize: isSmall ? 16 : 20,
               fontWeight: FontWeight.w600,
@@ -8230,40 +8254,190 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       // --- NEUE LOGIK FÜR CONTAINER-PAKETE ---
       final byteData = ByteData.view(Uint8List.fromList(value).buffer);
 
+      // Debug-Ausgabe entfernt - könnte Performance beeinflussen
+
       // Lies die Metadaten aus dem Paket-Header
-      // uint8_t packet_type = byteData.getUint8(0); // Typ, falls benötigt
+      int packetType = byteData.getUint8(0);
       int sampleCount = byteData.getUint8(1);
 
       // Lese Frequenzdaten
       final double parsedLoopFreq = byteData.getUint16(2, Endian.little) / 10.0;
       final double parsedBleFreq = byteData.getUint8(4).toDouble();
 
-      // Wir starten das Auslesen der Samples nach dem Header (5 Bytes)
-      int offset = 5;
+      // Pakettyp-spezifische Verarbeitung
+      // WICHTIG: Aktuell sendet die Firmware noch das alte Format!
+      // Wenn packetType nicht explizit geprüft wird, nimm das alte Format an
+      if (packetType == 0x01 || value.length < 50) { // Altes Format hat kleinere Pakete
+        // Container-Format mit Duty-Cycles im Header
+        
+        // Lese Duty Cycles aus dem erweiterten Header (ab Byte 5)
+        int duty1FromPacket = 0;
+        int duty2FromPacket = 0;
+        int offset = 5;
+        
+        // Prüfe ob der Header erweitert wurde (9 bytes statt 5)
+        if (value.length >= 9 + 4) { // Mindestens Header + 1 Sample
+          duty1FromPacket = byteData.getInt16(5, Endian.little); // Signed für Vorzeichen
+          duty2FromPacket = byteData.getInt16(7, Endian.little); // Signed für Vorzeichen
+          offset = 9; // Starte Samples nach dem erweiterten Header
+        }
+        List<SensorReading> packetReadings = [];
+        
+        // Berechne die Zeit zwischen den Samples basierend auf der Loop-Frequenz
+        final double timeBetweenSamples = parsedLoopFreq > 0 ? 1000.0 / parsedLoopFreq : 1.0; // in Millisekunden
+        
+        // Initialisiere den letzten Timestamp wenn noch nicht vorhanden
+        _lastSampleTimestamp ??= DateTime.now();
+        
+        // Berechne den Startzeit für dieses Paket basierend auf dem letzten Sample
+        // Der erste Sample des neuen Pakets sollte direkt nach dem letzten Sample des vorherigen Pakets kommen
+        DateTime currentTimestamp = _lastSampleTimestamp!;
+        
+        // Debug logging removed - timestamp calculation fixed
 
-      // NEU: Erstellen Sie eine temporäre Liste für das Paket
-      List<SensorReading> packetReadings = [];
-      
-      // Berechne die Zeit zwischen den Samples basierend auf der Loop-Frequenz
-      final double timeBetweenSamples = parsedLoopFreq > 0 ? 1000.0 / parsedLoopFreq : 1.0; // in Millisekunden
-      
-      // Initialisiere den letzten Timestamp wenn noch nicht vorhanden
-      _lastSampleTimestamp ??= DateTime.now();
-      
-      // Berechne den Startzeit für dieses Paket basierend auf dem letzten Sample
-      // Füge einen kleinen Buffer hinzu um Überschneidungen zu vermeiden
-      DateTime currentTimestamp = _lastSampleTimestamp!.add(Duration(microseconds: (timeBetweenSamples * 1000).round()));
+        for (int i = 0; i < sampleCount; i++) {
+          // Stelle sicher, dass wir nicht über das Ende der Daten hinauslesen
+          if (offset + 4 <= value.length) {
+            // Lese X und Y (jeweils 16-bit Integer) und skaliere zurück
+            final double parsedX = byteData.getInt16(offset, Endian.little) / 1000.0;
+            final double parsedY = byteData.getInt16(offset + 2, Endian.little) / 1000.0;
 
-      for (int i = 0; i < sampleCount; i++) {
-        // Stelle sicher, dass wir nicht über das Ende der Daten hinauslesen
-        if (offset + 4 <= value.length) {
-          // Lese X und Y (jeweils 16-bit Integer) und skaliere zurück
+            // Verschiebe den Offset zum nächsten Sample
+            offset += 4;
+
+            // Füge die entpackten Daten dem Graphen hinzu
+            sensorX = parsedX;
+            sensorY = parsedY;
+            isCalibrated = true;
+
+            // Aktualisiere Frequenzdaten und Duty Cycles nur beim ersten Sample jedes Pakets
+            if (i == 0) {
+              loopFrequency = parsedLoopFreq;
+              bleFrequency = parsedBleFreq;
+              
+              // Aktualisiere Duty Cycles immer (können auch negative Werte für Richtung haben)
+              setState(() {
+                duty1 = duty1FromPacket;
+                duty2 = duty2FromPacket;
+              });
+            }
+
+            // Timestamp für dieses Sample
+            final sampleTimestamp = currentTimestamp;
+            
+            // Inkrementiere den Timestamp für das nächste Sample
+            currentTimestamp = currentTimestamp.add(Duration(microseconds: (timeBetweenSamples * 1000).round()));
+
+            final reading = SensorReading(
+              timestamp: sampleTimestamp,
+              x: parsedX,
+              y: parsedY,
+              duty1: duty1FromPacket,
+              duty2: duty2FromPacket,
+            );
+            
+            // Fügen Sie das Reading zur Paket-Liste hinzu
+            if (isRecording) {
+              packetReadings.add(reading);
+            }
+          }
+        }
+        
+        // Update den letzten Timestamp für das nächste Paket
+        if (packetReadings.isNotEmpty) {
+          _lastSampleTimestamp = packetReadings.last.timestamp;
+        }
+
+        // NEU: Batch-Übertragung an Stream
+        if (packetReadings.isNotEmpty) {
+          // Alle Readings auf einmal übertragen
+          _sensorDataManager.addReadings(packetReadings);
+        }
+        
+      } else if (packetType == 0x02 && false) { // DEAKTIVIERT bis Firmware updated
+        // NEUES OPTIMIERTES Format mit periodischen Duty-Cycles
+        
+        // Validate minimum packet size (header is 6 bytes)
+        if (value.length < 6) {
+          print("ERROR: Packet type 0x02 too small. Size: ${value.length}, minimum required: 6");
+          return;
+        }
+        
+        int dutyCycleInterval = byteData.getUint8(5);
+        int offset = 6; // Nach erweitertem Header
+        List<SensorReading> packetReadings = [];
+        int lastDuty1 = 0;
+        int lastDuty2 = 0;
+        
+        // Debug information
+        print("Packet 0x02 - Size: ${value.length}, Samples: $sampleCount, DutyCycleInterval: $dutyCycleInterval, LoopFreq: $parsedLoopFreq, BleFreq: $parsedBleFreq");
+        
+        // Berechne die Zeit zwischen den Samples basierend auf der Loop-Frequenz
+        final double timeBetweenSamples = parsedLoopFreq > 0 ? 1000.0 / parsedLoopFreq : 1.0; // in Millisekunden
+        
+        // Initialisiere den letzten Timestamp wenn noch nicht vorhanden
+        _lastSampleTimestamp ??= DateTime.now();
+        
+        // Berechne den Startzeit für dieses Paket basierend auf dem letzten Sample
+        // Der erste Sample des neuen Pakets sollte direkt nach dem letzten Sample des vorherigen Pakets kommen
+        DateTime currentTimestamp = _lastSampleTimestamp!;
+        
+        // Debug logging removed - timestamp calculation fixed
+
+        for (int i = 0; i < sampleCount; i++) {
+          // Prüfe ob genügend Bytes für minimales Sample vorhanden (5 bytes: X, Y, flags)
+          if (offset + 5 > value.length) {
+            print("WARNING: Incomplete sample at index $i, offset $offset, remaining bytes: ${value.length - offset}");
+            break;
+          }
+          
+          // Lese X, Y und Flags
           final double parsedX = byteData.getInt16(offset, Endian.little) / 1000.0;
           final double parsedY = byteData.getInt16(offset + 2, Endian.little) / 1000.0;
+          final int flags = byteData.getUint8(offset + 4);
+          
+          // Check if duty cycle should be included based on interval
+          // NOTE: This might be the issue - the ESP32 might include duty cycles based on the interval,
+          // not just the flags. For example, if dutyCycleInterval=5, duty cycles might be included
+          // every 5th sample (i=0,5,10,etc) regardless of flags
+          bool shouldHaveDutyCycle = (flags & 0x01) != 0;
+          
+          // Alternative interpretation: duty cycles might be included when i % dutyCycleInterval == 0
+          // bool shouldHaveDutyCycle = (dutyCycleInterval > 0 && i % dutyCycleInterval == 0);
+          
+          // Berechne benötigte Bytes für dieses Sample
+          int sampleSize = 5; // Basis: X, Y, flags
+          if (shouldHaveDutyCycle) {
+            sampleSize += 4; // Duty cycle data
+          }
+          
+          // Prüfe ob genügend Bytes für das komplette Sample vorhanden
+          if (offset + sampleSize > value.length) {
+            print("ERROR: Insufficient data for sample $i with flags $flags. Need $sampleSize bytes, have ${value.length - offset}");
+            break;
+          }
+          
+          // Verschiebe offset nach X, Y, flags
+          offset += 5;
 
-          // Verschiebe den Offset zum nächsten Sample
-          offset += 4;
+          // Prüfe ob Duty-Daten vorhanden sind
+          if (shouldHaveDutyCycle) {
+            lastDuty1 = byteData.getUint16(offset, Endian.little);
+            lastDuty2 = byteData.getUint16(offset + 2, Endian.little);
+            offset += 4;
+            
+            // Aktualisiere die globalen Duty-Werte für die Anzeige
+            setState(() {
+              duty1 = lastDuty1;
+              duty2 = lastDuty2;
+            });
+          }
 
+          // Debug: Log first few samples to check for corruption
+          if (i < 3) {
+            print("Sample $i - X: $parsedX, Y: $parsedY, Flags: 0x${flags.toRadixString(16)}, Duty1: $lastDuty1, Duty2: $lastDuty2, Offset after: $offset");
+          }
+          
           // Füge die entpackten Daten dem Graphen hinzu
           sensorX = parsedX;
           sensorY = parsedY;
@@ -8275,34 +8449,39 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             bleFrequency = parsedBleFreq;
           }
 
+          // WICHTIG: Berechne den Timestamp für jedes Sample einzeln
+          // um Rundungsfehler zu vermeiden
+          final sampleTimestamp = currentTimestamp.add(Duration(
+            microseconds: (i * timeBetweenSamples * 1000).round()
+          ));
+
           final reading = SensorReading(
-            timestamp: currentTimestamp,
+            timestamp: sampleTimestamp,
             x: parsedX,
             y: parsedY,
-            duty1: 0, // Duty-Cycle wird im neuen Paket nicht mehr gesendet
-            duty2: 0,
+            duty1: lastDuty1,
+            duty2: lastDuty2,
           );
 
           // Fügen Sie das Reading zur Paket-Liste hinzu
           if (isRecording) {
             packetReadings.add(reading);
           }
-          
-          // Inkrementiere den Timestamp für das nächste Sample
-          currentTimestamp = currentTimestamp.add(Duration(microseconds: (timeBetweenSamples * 1000).round()));
+        }
+        
+        // Update den letzten Timestamp für das nächste Paket
+        if (packetReadings.isNotEmpty) {
+          _lastSampleTimestamp = packetReadings.last.timestamp;
+        }
+
+        // NEU: Batch-Übertragung an Stream
+        if (packetReadings.isNotEmpty) {
+          // Alle Readings auf einmal übertragen
+          _sensorDataManager.addReadings(packetReadings);
         }
       }
-      
-      // Speichere den letzten Timestamp für das nächste Paket
-      if (packetReadings.isNotEmpty) {
-        _lastSampleTimestamp = packetReadings.last.timestamp;
-      }
 
-      // SENDEN SIE DIE GANZE LISTE AUF EINMAL
-      if (isRecording && packetReadings.isNotEmpty) {
-        _sensorDataManager.addReadings(packetReadings);
-        _dataPointCounter += packetReadings.length; // Zähle die empfangenen Datenpunkte
-      }
+      // Entfernt - bereits oben verarbeitet
       // Statistiken im Isolate nur noch alle 500ms berechnen statt bei jedem Paket
       final now = DateTime.now();
       if (_sendPort != null && now.difference(_lastStatisticsUpdate).inMilliseconds > 500) {
@@ -8335,14 +8514,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         offset += 1;
         final double parsedBleFreq = byteData.getUint8(offset).toDouble();
 
-        sensorX = parsedX;
-        sensorY = parsedY;
-        duty1 = parsedDuty1;
-        duty2 = parsedDuty2;
-        loopFrequency = parsedLoopFreq;
-        currentFilter = parsedFilter;
-        bleFrequency = parsedBleFreq; // Neue Frequenz speichern
-        isCalibrated = true; // Bei Binärformat immer kalibriert
+        // WICHTIG: setState() aufrufen, damit die UI aktualisiert wird!
+        setState(() {
+          sensorX = parsedX;
+          sensorY = parsedY;
+          duty1 = parsedDuty1;
+          duty2 = parsedDuty2;
+          loopFrequency = parsedLoopFreq;
+          currentFilter = parsedFilter;
+          bleFrequency = parsedBleFreq; // Neue Frequenz speichern
+          isCalibrated = true; // Bei Binärformat immer kalibriert
+        });
 
         final reading = SensorReading(
           timestamp: DateTime.now(),
@@ -11798,6 +11980,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     _isAnalysisWidgetBeingTouched = isTouched;
                   });
                 },
+                duty1: duty1,
+                duty2: duty2,
               ),
               // Kalibrierungs-Tab
               buildCalibrationView(),
@@ -13963,6 +14147,12 @@ Map<String, double> _calculateNiceAxisValues(double dataMin, double dataMax, {in
   double axisMin = (dataMin / niceInterval).floor() * niceInterval;
   double axisMax = (dataMax / niceInterval).ceil() * niceInterval;
   if (axisMin == axisMax) axisMax += niceInterval;
+  
+  // Zusätzlicher Puffer von 10% für Spitzen
+  double padding = (axisMax - axisMin) * 0.1;
+  axisMin -= padding;
+  axisMax += padding;
+  
   return {'axisMin': axisMin, 'axisMax': axisMax, 'interval': niceInterval};
 }
 
