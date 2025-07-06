@@ -510,7 +510,7 @@ abstract class AnalysisWidgetModel {
 class ChartWidgetModel extends AnalysisWidgetModel {
   final bool showGrid;
   final bool showLegend;
-  final int displayRange; // Zeitfenster in Sekunden
+  final double displayRange; // Zeitfenster in Sekunden
   final bool showTimeControls; // Neue Option für Zeitkontrollen
   final bool triggerEnabled;
   final double? upperThreshold;
@@ -528,7 +528,7 @@ class ChartWidgetModel extends AnalysisWidgetModel {
     required String title,
     this.showGrid = true,
     this.showLegend = true,
-    this.displayRange = 10,
+    this.displayRange = 10.0,
     this.showTimeControls = false,
     this.triggerEnabled = false,
     this.upperThreshold,
@@ -1309,7 +1309,7 @@ enum CalibUiState {
 class RealtimeChartPainter extends CustomPainter {
   // Zurück zu List für Stabilität
   final List<SensorReading> visibleData;
-  final int displayRange;
+  final double displayRange;
   final bool showGrid;
   final double lineThickness;
   final bool showDataPoints;
@@ -1885,7 +1885,7 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
 
       // ENTFERNE ALTE PUNKTE (wird jetzt nur noch einmal pro Paket aufgerufen)
       if (newReadings.isNotEmpty) {
-        final cutoffTime = newReadings.last.timestamp.subtract(Duration(seconds: widget.model.displayRange));
+        final cutoffTime = newReadings.last.timestamp.subtract(Duration(milliseconds: (widget.model.displayRange * 1000).round()));
         while (_buffer.isNotEmpty && _buffer.first.timestamp.isBefore(cutoffTime)) {
           _buffer.removeFirst();
         }
@@ -1948,7 +1948,7 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
     // Wenn sich nur die Zeitspanne ändert, den Puffer einmalig anpassen
     if (oldWidget.model.displayRange != widget.model.displayRange && _buffer.isNotEmpty) {
       final now = DateTime.now();
-      final cutoffTime = now.subtract(Duration(seconds: widget.model.displayRange));
+      final cutoffTime = now.subtract(Duration(milliseconds: (widget.model.displayRange * 1000).round()));
       _buffer.removeWhere((reading) => reading.timestamp.isBefore(cutoffTime));
     }
   }
@@ -1973,7 +1973,7 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
             child: Row(
               children: [
               // Zeitskala-Auswahl mit Popup
-              PopupMenuButton<int>(
+              PopupMenuButton<double>(
                 initialValue: widget.model.displayRange,
                 onSelected: (value) {
                   if (widget.onModelUpdate != null) {
@@ -1999,14 +1999,16 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                   }
                 },
                 itemBuilder: (context) => [
-                  PopupMenuItem(value: 1, child: Text('1 Sekunde')),
-                  PopupMenuItem(value: 2, child: Text('2 Sekunden')),
-                  PopupMenuItem(value: 5, child: Text('5 Sekunden')),
-                  PopupMenuItem(value: 10, child: Text('10 Sekunden')),
-                  PopupMenuItem(value: 30, child: Text('30 Sekunden')),
-                  PopupMenuItem(value: 60, child: Text('1 Minute')),
-                  PopupMenuItem(value: 120, child: Text('2 Minuten')),
-                  PopupMenuItem(value: 300, child: Text('5 Minuten')),
+                  PopupMenuItem<double>(value: 0.25, child: Text('250 ms')),
+                  PopupMenuItem<double>(value: 0.5, child: Text('0.5 Sekunden')),
+                  PopupMenuItem<double>(value: 1.0, child: Text('1 Sekunde')),
+                  PopupMenuItem<double>(value: 2.0, child: Text('2 Sekunden')),
+                  PopupMenuItem<double>(value: 5.0, child: Text('5 Sekunden')),
+                  PopupMenuItem<double>(value: 10.0, child: Text('10 Sekunden')),
+                  PopupMenuItem<double>(value: 30.0, child: Text('30 Sekunden')),
+                  PopupMenuItem<double>(value: 60.0, child: Text('1 Minute')),
+                  PopupMenuItem<double>(value: 120.0, child: Text('2 Minuten')),
+                  PopupMenuItem<double>(value: 300.0, child: Text('5 Minuten')),
                 ],
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -2024,11 +2026,13 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        widget.model.displayRange == 1
+                        widget.model.displayRange < 1
+                            ? '${(widget.model.displayRange * 1000).toInt()}ms'
+                            : widget.model.displayRange == 1
                             ? '1s'
                             : widget.model.displayRange < 60
-                            ? '${widget.model.displayRange}s'
-                            : '${widget.model.displayRange ~/ 60}m',
+                            ? '${widget.model.displayRange.toStringAsFixed(widget.model.displayRange == widget.model.displayRange.roundToDouble() ? 0 : 1)}s'
+                            : '${(widget.model.displayRange / 60).toInt()}m',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -2374,7 +2378,7 @@ class OptimizedChartWidget extends StatelessWidget {
 
     // Berechne den tatsächlichen X-Bereich für volle Nutzung
     final now = DateTime.now();
-    final startTime = now.subtract(Duration(seconds: model.displayRange));
+    final startTime = now.subtract(Duration(milliseconds: (model.displayRange * 1000).round()));
 
     double actualMinX = 0;
     double actualMaxX = model.displayRange.toDouble();
@@ -2407,7 +2411,7 @@ class OptimizedChartWidget extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // Zeitskala-Auswahl mit Popup
-              PopupMenuButton<int>(
+              PopupMenuButton<double>(
                 initialValue: model.displayRange,
                 onSelected: (value) {
                   onModelUpdate(ChartWidgetModel(
@@ -2431,14 +2435,16 @@ class OptimizedChartWidget extends StatelessWidget {
                   ));
                 },
                 itemBuilder: (context) => [
-                  PopupMenuItem(value: 1, child: Text('1 Sekunde')),
-                  PopupMenuItem(value: 2, child: Text('2 Sekunden')),
-                  PopupMenuItem(value: 5, child: Text('5 Sekunden')),
-                  PopupMenuItem(value: 10, child: Text('10 Sekunden')),
-                  PopupMenuItem(value: 30, child: Text('30 Sekunden')),
-                  PopupMenuItem(value: 60, child: Text('1 Minute')),
-                  PopupMenuItem(value: 120, child: Text('2 Minuten')),
-                  PopupMenuItem(value: 300, child: Text('5 Minuten')),
+                  PopupMenuItem<double>(value: 0.25, child: Text('250 ms')),
+                  PopupMenuItem<double>(value: 0.5, child: Text('0.5 Sekunden')),
+                  PopupMenuItem<double>(value: 1.0, child: Text('1 Sekunde')),
+                  PopupMenuItem<double>(value: 2.0, child: Text('2 Sekunden')),
+                  PopupMenuItem<double>(value: 5.0, child: Text('5 Sekunden')),
+                  PopupMenuItem<double>(value: 10.0, child: Text('10 Sekunden')),
+                  PopupMenuItem<double>(value: 30.0, child: Text('30 Sekunden')),
+                  PopupMenuItem<double>(value: 60.0, child: Text('1 Minute')),
+                  PopupMenuItem<double>(value: 120.0, child: Text('2 Minuten')),
+                  PopupMenuItem<double>(value: 300.0, child: Text('5 Minuten')),
                 ],
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -4641,7 +4647,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     // Verwende die letzten Datenpunkte
     final displayRange = model.displayRange;
     final now = DateTime.now();
-    final startTime = now.subtract(Duration(seconds: displayRange));
+    final startTime = now.subtract(Duration(milliseconds: (displayRange * 1000).round()));
 
     // Filtere Daten basierend auf Zeitfenster
     final recentData = data.where((reading) =>
@@ -4762,7 +4768,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // Zeitskala-Auswahl
-              PopupMenuButton<int>(
+              PopupMenuButton<double>(
                 initialValue: model.displayRange,
                 onSelected: (value) {
                   // Finde den Tab und Widget Index
@@ -4796,14 +4802,16 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                   }
                 },
                 itemBuilder: (context) => [
-                  PopupMenuItem(value: 1, child: Text('1 Sekunde')),
-                  PopupMenuItem(value: 2, child: Text('2 Sekunden')),
-                  PopupMenuItem(value: 5, child: Text('5 Sekunden')),
-                  PopupMenuItem(value: 10, child: Text('10 Sekunden')),
-                  PopupMenuItem(value: 30, child: Text('30 Sekunden')),
-                  PopupMenuItem(value: 60, child: Text('1 Minute')),
-                  PopupMenuItem(value: 120, child: Text('2 Minuten')),
-                  PopupMenuItem(value: 300, child: Text('5 Minuten')),
+                  PopupMenuItem<double>(value: 0.25, child: Text('250 ms')),
+                  PopupMenuItem<double>(value: 0.5, child: Text('0.5 Sekunden')),
+                  PopupMenuItem<double>(value: 1.0, child: Text('1 Sekunde')),
+                  PopupMenuItem<double>(value: 2.0, child: Text('2 Sekunden')),
+                  PopupMenuItem<double>(value: 5.0, child: Text('5 Sekunden')),
+                  PopupMenuItem<double>(value: 10.0, child: Text('10 Sekunden')),
+                  PopupMenuItem<double>(value: 30.0, child: Text('30 Sekunden')),
+                  PopupMenuItem<double>(value: 60.0, child: Text('1 Minute')),
+                  PopupMenuItem<double>(value: 120.0, child: Text('2 Minuten')),
+                  PopupMenuItem<double>(value: 300.0, child: Text('5 Minuten')),
                 ],
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -8491,23 +8499,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           _sensorDataManager.addReadings(packetReadings);
         }
         
-      } else if (packetType == 0x02 && false) { // DEAKTIVIERT bis Firmware updated
-        // NEUES OPTIMIERTES Format mit periodischen Duty-Cycles
+      } else if (packetType == 0x02) { // Version 4.0 - Aktiviert
+        // Version 4.0 - Optimierter Parser mit gebündeltem setState
         
-        // Validate minimum packet size (header is 6 bytes)
-        if (value.length < 6) {
-          print("ERROR: Packet type 0x02 too small. Size: ${value.length}, minimum required: 6");
-          return;
-        }
+        final sampleCount = byteData.getUint8(1);
+        if (sampleCount == 0) return; // Leeres Paket ignorieren
+
+        final parsedLoopFreq = byteData.getUint16(2, Endian.little) / 10.0;
         
-        int dutyCycleInterval = byteData.getUint8(5);
-        int offset = 6; // Nach erweitertem Header
+        // Lokale Variablen zum Sammeln der letzten Werte im Paket
+        int lastDuty1InPacket = duty1;
+        int lastDuty2InPacket = duty2;
         List<SensorReading> packetReadings = [];
-        int lastDuty1 = 0;
-        int lastDuty2 = 0;
-        
-        // Debug information
-        print("Packet 0x02 - Size: ${value.length}, Samples: $sampleCount, DutyCycleInterval: $dutyCycleInterval, LoopFreq: $parsedLoopFreq, BleFreq: $parsedBleFreq");
         
         // Berechne die Zeit zwischen den Samples basierend auf der Loop-Frequenz
         final double timeBetweenSamples = parsedLoopFreq > 0 ? 1000.0 / parsedLoopFreq : 1.0; // in Millisekunden
@@ -8516,105 +8519,52 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         _lastSampleTimestamp ??= DateTime.now();
         
         // Berechne den Startzeit für dieses Paket basierend auf dem letzten Sample
-        // Der erste Sample des neuen Pakets sollte direkt nach dem letzten Sample des vorherigen Pakets kommen
         DateTime currentTimestamp = _lastSampleTimestamp!;
         
-        // Debug logging removed - timestamp calculation fixed
+        // Header ist 4 Bytes (type, count, freq), Daten beginnen bei Offset 4
+        int offset = 4;
 
         for (int i = 0; i < sampleCount; i++) {
-          // Prüfe ob genügend Bytes für minimales Sample vorhanden (5 bytes: X, Y, flags)
-          if (offset + 5 > value.length) {
-            print("WARNING: Incomplete sample at index $i, offset $offset, remaining bytes: ${value.length - offset}");
-            break;
-          }
-          
-          // Lese X, Y und Flags
-          final double parsedX = byteData.getInt16(offset, Endian.little) / 1000.0;
-          final double parsedY = byteData.getInt16(offset + 2, Endian.little) / 1000.0;
-          final int flags = byteData.getUint8(offset + 4);
-          
-          // Check if duty cycle should be included based on interval
-          // NOTE: This might be the issue - the ESP32 might include duty cycles based on the interval,
-          // not just the flags. For example, if dutyCycleInterval=5, duty cycles might be included
-          // every 5th sample (i=0,5,10,etc) regardless of flags
-          bool shouldHaveDutyCycle = (flags & 0x01) != 0;
-          
-          // Alternative interpretation: duty cycles might be included when i % dutyCycleInterval == 0
-          // bool shouldHaveDutyCycle = (dutyCycleInterval > 0 && i % dutyCycleInterval == 0);
-          
-          // Berechne benötigte Bytes für dieses Sample
-          int sampleSize = 5; // Basis: X, Y, flags
-          if (shouldHaveDutyCycle) {
-            sampleSize += 4; // Duty cycle data
-          }
-          
-          // Prüfe ob genügend Bytes für das komplette Sample vorhanden
-          if (offset + sampleSize > value.length) {
-            print("ERROR: Insufficient data for sample $i with flags $flags. Need $sampleSize bytes, have ${value.length - offset}");
-            break;
-          }
-          
-          // Verschiebe offset nach X, Y, flags
-          offset += 5;
+            if (offset + 8 <= value.length) { // 8 Bytes pro Sample
+                final parsedX = byteData.getInt16(offset, Endian.little) / 1000.0;
+                final parsedY = byteData.getInt16(offset + 2, Endian.little) / 1000.0;
+                final parsedDuty1 = byteData.getInt16(offset + 4, Endian.little);
+                final parsedDuty2 = byteData.getInt16(offset + 6, Endian.little);
+                offset += 8;
 
-          // Prüfe ob Duty-Daten vorhanden sind
-          if (shouldHaveDutyCycle) {
-            lastDuty1 = byteData.getUint16(offset, Endian.little);
-            lastDuty2 = byteData.getUint16(offset + 2, Endian.little);
-            offset += 4;
-            
-            // Aktualisiere die globalen Duty-Werte für die Anzeige
-            setState(() {
-              duty1 = lastDuty1;
-              duty2 = lastDuty2;
-            });
-          }
+                lastDuty1InPacket = parsedDuty1;
+                lastDuty2InPacket = parsedDuty2;
+                
+                // Timestamp für dieses Sample
+                final sampleTimestamp = currentTimestamp;
+                
+                // Inkrementiere den Timestamp für das nächste Sample
+                currentTimestamp = currentTimestamp.add(Duration(microseconds: (timeBetweenSamples * 1000).round()));
 
-          // Debug: Log first few samples to check for corruption
-          if (i < 3) {
-            print("Sample $i - X: $parsedX, Y: $parsedY, Flags: 0x${flags.toRadixString(16)}, Duty1: $lastDuty1, Duty2: $lastDuty2, Offset after: $offset");
-          }
-          
-          // Füge die entpackten Daten dem Graphen hinzu
-          sensorX = parsedX;
-          sensorY = parsedY;
-          isCalibrated = true;
-
-          // Aktualisiere Frequenzdaten nur beim ersten Sample jedes Pakets
-          if (i == 0) {
-            loopFrequency = parsedLoopFreq;
-            bleFrequency = parsedBleFreq;
-          }
-
-          // WICHTIG: Berechne den Timestamp für jedes Sample einzeln
-          // um Rundungsfehler zu vermeiden
-          final sampleTimestamp = currentTimestamp.add(Duration(
-            microseconds: (i * timeBetweenSamples * 1000).round()
-          ));
-
-          final reading = SensorReading(
-            timestamp: sampleTimestamp,
-            x: parsedX,
-            y: parsedY,
-            duty1: lastDuty1,
-            duty2: lastDuty2,
-          );
-
-          // Fügen Sie das Reading zur Paket-Liste hinzu
-          if (isRecording) {
-            packetReadings.add(reading);
-          }
+                packetReadings.add(SensorReading(
+                    timestamp: sampleTimestamp, x: parsedX, y: parsedY, duty1: parsedDuty1, duty2: parsedDuty2));
+            } else {
+              break; // Paket ist zu kurz, Schleife abbrechen
+            }
         }
         
         // Update den letzten Timestamp für das nächste Paket
         if (packetReadings.isNotEmpty) {
           _lastSampleTimestamp = packetReadings.last.timestamp;
+          _sensorDataManager.addReadings(packetReadings);
         }
 
-        // NEU: Batch-Übertragung an Stream
-        if (packetReadings.isNotEmpty) {
-          // Alle Readings auf einmal übertragen
-          _sensorDataManager.addReadings(packetReadings);
+        // Ein EINZIGER Aufruf am Ende, um die UI zu aktualisieren
+        if (mounted) {
+            setState(() {
+                duty1 = lastDuty1InPacket;
+                duty2 = lastDuty2InPacket;
+                loopFrequency = parsedLoopFreq;
+                // Die BLE-Frequenz wird jetzt nicht mehr aus dem Paket gelesen,
+                // sondern könnte in der App über die Ankunftsrate der Pakete geschätzt werden.
+                // Für die Anzeige setzen wir sie auf den Sollwert.
+                bleFrequency = 100.0; 
+            });
         }
       }
 
