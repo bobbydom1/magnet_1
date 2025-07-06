@@ -521,6 +521,7 @@ class ChartWidgetModel extends AnalysisWidgetModel {
   final bool showLines; // Neue Option für Linien anzeigen
   final bool showXAxisLabels; // Neue Option für X-Achsen-Beschriftung
   final bool showYAxisLabels; // Neue Option für Y-Achsen-Beschriftung
+  final bool showPwmValues; // Neue Option für PWM-Werte anzeigen
 
   ChartWidgetModel({
     required String id,
@@ -538,6 +539,7 @@ class ChartWidgetModel extends AnalysisWidgetModel {
     this.showLines = true,
     this.showXAxisLabels = true,
     this.showYAxisLabels = true,
+    this.showPwmValues = false,
     AnalysisWidgetSize size = AnalysisWidgetSize.wideRectangle,
     GridPosition? position,
   }) : super(id: id, title: title, type: 'chart', size: size, position: position);
@@ -1313,6 +1315,7 @@ class RealtimeChartPainter extends CustomPainter {
   final bool showDataPoints;
   final double pointRadius;
   final bool showLines;
+  final bool showPwmValues;
   final bool triggerEnabled;
   final double? upperThreshold;
   final double? lowerThreshold;
@@ -1332,6 +1335,7 @@ class RealtimeChartPainter extends CustomPainter {
     this.showDataPoints = false,
     this.pointRadius = 2.0,
     this.showLines = true,
+    this.showPwmValues = false,
     this.triggerEnabled = false,
     this.upperThreshold,
     this.lowerThreshold,
@@ -1541,6 +1545,90 @@ class RealtimeChartPainter extends CustomPainter {
         final yY = getYPos(lastReading.y);
         canvas.drawCircle(Offset(x, yY), pointRadius, yPointPaint);
       }
+    }
+    
+    // Zeichne PWM-Werte wenn aktiviert
+    if (showPwmValues && visibleData.isNotEmpty) {
+      // PWM1 (duty1) - grüne Linie
+      final pwm1Path = Path();
+      final pwm1Paint = Paint()
+        ..color = CupertinoColors.systemGreen
+        ..strokeWidth = lineThickness * 0.8 // Etwas dünner als Hauptlinien
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+      
+      // PWM2 (duty2) - violette Linie  
+      final pwm2Path = Path();
+      final pwm2Paint = Paint()
+        ..color = CupertinoColors.systemPurple
+        ..strokeWidth = lineThickness * 0.8
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round;
+      
+      // Finde min/max PWM-Werte für Skalierung
+      double minPwm = double.infinity;
+      double maxPwm = double.negativeInfinity;
+      for (final reading in visibleData) {
+        if (reading.duty1 < minPwm) minPwm = reading.duty1.toDouble();
+        if (reading.duty1 > maxPwm) maxPwm = reading.duty1.toDouble();
+        if (reading.duty2 < minPwm) minPwm = reading.duty2.toDouble();
+        if (reading.duty2 > maxPwm) maxPwm = reading.duty2.toDouble();
+      }
+      
+      // Füge etwas Padding hinzu
+      final pwmRange = maxPwm - minPwm;
+      if (pwmRange > 0) {
+        minPwm -= pwmRange * 0.1;
+        maxPwm += pwmRange * 0.1;
+      } else {
+        // Falls alle Werte gleich sind
+        minPwm -= 10;
+        maxPwm += 10;
+      }
+      
+      // Hilfsfunktion für PWM Y-Position
+      double getPwmYPos(double pwmValue) {
+        if (maxPwm == minPwm) return size.height / 2;
+        double yPos = size.height - ((pwmValue - minPwm) / (maxPwm - minPwm)) * size.height;
+        return yPos.clamp(-10.0, size.height + 10.0);
+      }
+      
+      // Zeichne PWM-Linien mit allen Datenpunkten für maximale Auflösung
+      // Verwende immer ALLE Datenpunkte für PWM, nicht nur die ausgedünnten
+      for (int i = 0; i < visibleData.length; i++) {
+        final reading = visibleData[i];
+        final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+        final x = (timeDiff / displayRange) * size.width;
+        
+        // PWM1 (duty1)
+        final pwm1Y = getPwmYPos(reading.duty1.toDouble());
+        if (i == 0) {
+          pwm1Path.moveTo(x, pwm1Y);
+        } else {
+          // Prüfe ob sich der PWM-Wert geändert hat
+          if (i > 0 && reading.duty1 != visibleData[i-1].duty1) {
+            // Bei Änderung: Zeichne erst horizontal zum neuen Zeitpunkt, dann vertikal
+            pwm1Path.lineTo(x, getPwmYPos(visibleData[i-1].duty1.toDouble()));
+          }
+          pwm1Path.lineTo(x, pwm1Y);
+        }
+        
+        // PWM2 (duty2)
+        final pwm2Y = getPwmYPos(reading.duty2.toDouble());
+        if (i == 0) {
+          pwm2Path.moveTo(x, pwm2Y);
+        } else {
+          // Prüfe ob sich der PWM-Wert geändert hat
+          if (i > 0 && reading.duty2 != visibleData[i-1].duty2) {
+            // Bei Änderung: Zeichne erst horizontal zum neuen Zeitpunkt, dann vertikal
+            pwm2Path.lineTo(x, getPwmYPos(visibleData[i-1].duty2.toDouble()));
+          }
+          pwm2Path.lineTo(x, pwm2Y);
+        }
+      }
+      
+      canvas.drawPath(pwm1Path, pwm1Paint);
+      canvas.drawPath(pwm2Path, pwm2Paint);
     }
   }
 
@@ -1986,6 +2074,54 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  // PWM Toggle Button
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 32,
+                    onPressed: () {
+                      if (widget.onModelUpdate != null) {
+                        widget.onModelUpdate!(ChartWidgetModel(
+                          id: widget.model.id,
+                          title: widget.model.title,
+                          showGrid: widget.model.showGrid,
+                          showLegend: widget.model.showLegend,
+                          displayRange: widget.model.displayRange,
+                          showTimeControls: widget.model.showTimeControls,
+                          lineThickness: widget.model.lineThickness,
+                          triggerEnabled: widget.model.triggerEnabled,
+                          upperThreshold: widget.model.upperThreshold,
+                          lowerThreshold: widget.model.lowerThreshold,
+                          showDataPoints: widget.model.showDataPoints,
+                          pointRadius: widget.model.pointRadius,
+                          showLines: widget.model.showLines,
+                          showPwmValues: !widget.model.showPwmValues,
+                          showXAxisLabels: widget.model.showXAxisLabels,
+                          showYAxisLabels: widget.model.showYAxisLabels,
+                          size: widget.model.size,
+                          position: widget.model.position,
+                        ));
+                      }
+                      HapticFeedback.lightImpact();
+                    },
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: widget.model.showPwmValues
+                            ? CupertinoColors.systemGreen.withOpacity(0.15)
+                            : CupertinoColors.systemFill,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        CupertinoIcons.waveform,
+                        size: 18,
+                        color: widget.model.showPwmValues
+                            ? CupertinoColors.systemGreen
+                            : CupertinoColors.label,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   // Play/Pause Button
                   CupertinoButton(
                     padding: EdgeInsets.zero,
@@ -2127,6 +2263,7 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
                           showDataPoints: widget.model.showDataPoints,
                           pointRadius: widget.model.pointRadius,
                           showLines: widget.model.showLines,
+                          showPwmValues: widget.model.showPwmValues,
                           triggerEnabled: widget.model.triggerEnabled,
                           upperThreshold: widget.model.upperThreshold,
                           lowerThreshold: widget.model.lowerThreshold,
