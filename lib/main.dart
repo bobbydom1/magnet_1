@@ -12096,542 +12096,672 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   Widget _buildPidTuningTab() {
-    // Dieser Code war vorher in der buildTuningView und wird nun hier gekapselt
-    return Column(
-      children: [
-        // NEU: Einklappbarer Status-Bereich
-        ExpansionTile(
-          title: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              children: [
-                const Icon(Icons.bluetooth_connected, color: Colors.green, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'ESP32 Verbunden',
-                  style: TextStyle(
-                    color: Colors.green.shade700,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
+    return CupertinoPageScaffold(
+      backgroundColor: CupertinoColors.systemGroupedBackground,
+      child: CustomScrollView(
+        slivers: [
+          // Kompakter Header mit wichtigen Infos
+          SliverToBoxAdapter(
+            child: Container(
+              color: CupertinoColors.systemBackground,
+              child: SafeArea(
+                bottom: false,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      // Status Row
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: CupertinoColors.systemGreen.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(CupertinoIcons.check_mark_circled_solid,
+                                    color: CupertinoColors.systemGreen, size: 16),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Verbunden',
+                                  style: TextStyle(
+                                    color: CupertinoColors.systemGreen,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: CupertinoColors.systemGrey5,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'v$espFirmwareVersion',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: CupertinoColors.systemGrey,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          CupertinoButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: disconnect,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: CupertinoColors.systemRed.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(CupertinoIcons.xmark,
+                                      color: CupertinoColors.systemRed, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Trennen',
+                                    style: TextStyle(
+                                      color: CupertinoColors.systemRed,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      // Performance Indicators
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.systemGrey6,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: loopFrequency < 850
+                                ? CupertinoColors.systemOrange.withOpacity(0.3)
+                                : CupertinoColors.systemGreen.withOpacity(0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _buildMiniStat(
+                                'Loop',
+                                '${loopFrequency.toStringAsFixed(0)} Hz',
+                                loopFrequency < 850
+                                    ? CupertinoColors.systemOrange
+                                    : CupertinoColors.systemGreen,
+                              ),
+                            ),
+                            Container(
+                              width: 1,
+                              height: 30,
+                              color: CupertinoColors.systemGrey4,
+                            ),
+                            Expanded(
+                              child: _buildMiniStat(
+                                'BLE',
+                                '${bleFrequency.toStringAsFixed(0)} Hz',
+                                CupertinoColors.systemBlue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Filter Button
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: showFilterDialog,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: CupertinoColors.systemPurple.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(CupertinoIcons.slider_horizontal_3,
+                                  color: CupertinoColors.systemPurple, size: 18),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Filter ändern',
+                                style: TextStyle(
+                                  color: CupertinoColors.systemPurple,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const Spacer(),
+              ),
+            ),
+          ),
+          
+          // PID Controls Section
+          SliverToBoxAdapter(
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Text(
+                'PID PARAMETER',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: CupertinoColors.secondaryLabel,
+                  letterSpacing: -0.08,
+                ),
+              ),
+            ),
+          ),
+          
+          // Kompakte PID Controls
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                // X-Achse Sektion
+                _buildAxisSection(
+                  'X-Achse',
+                  CupertinoColors.systemBlue,
+                  [
+                    _buildCompactPidRow('P', kpX_pos, kpX_neg, 'kpxp', 'kpxn',
+                        kpXPosController, kpXNegController,
+                        (pos) => setState(() => kpX_pos = pos),
+                        (neg) => setState(() => kpX_neg = neg)),
+                    _buildCompactPidRow('I', kiX_pos, kiX_neg, 'kixp', 'kixn',
+                        kiXPosController, kiXNegController,
+                        (pos) => setState(() => kiX_pos = pos),
+                        (neg) => setState(() => kiX_neg = neg)),
+                    _buildCompactPidRow('D', kdX_pos, kdX_neg, 'kdxp', 'kdxn',
+                        kdXPosController, kdXNegController,
+                        (pos) => setState(() => kdX_pos = pos),
+                        (neg) => setState(() => kdX_neg = neg),
+                        isD: true),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // Y-Achse Sektion
+                _buildAxisSection(
+                  'Y-Achse',
+                  CupertinoColors.systemGreen,
+                  [
+                    _buildCompactPidRow('P', kpY_pos, kpY_neg, 'kpyp', 'kpyn',
+                        kpYPosController, kpYNegController,
+                        (pos) => setState(() => kpY_pos = pos),
+                        (neg) => setState(() => kpY_neg = neg)),
+                    _buildCompactPidRow('I', kiY_pos, kiY_neg, 'kiyp', 'kiyn',
+                        kiYPosController, kiYNegController,
+                        (pos) => setState(() => kiY_pos = pos),
+                        (neg) => setState(() => kiY_neg = neg)),
+                    _buildCompactPidRow('D', kdY_pos, kdY_neg, 'kdyp', 'kdyn',
+                        kdYPosController, kdYNegController,
+                        (pos) => setState(() => kdY_pos = pos),
+                        (neg) => setState(() => kdY_neg = neg),
+                        isD: true),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // D-Filter Sektion
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(4),
+                    color: CupertinoColors.systemBackground,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: CupertinoColors.systemGrey.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  child: Text(
-                    'v$espFirmwareVersion',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 20,
+                            decoration: BoxDecoration(
+                              color: CupertinoColors.systemPurple,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'D-Term Filter',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: CupertinoColors.label,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${dTermCutoffHz.toStringAsFixed(1)} Hz',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: CupertinoColors.systemPurple,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      CupertinoSlider(
+                        value: dFilterTimeConstantS,
+                        min: 0.001,
+                        max: 0.05,
+                        divisions: 100,
+                        activeColor: CupertinoColors.systemPurple,
+                        onChanged: (value) {
+                          setState(() => dFilterTimeConstantS = value);
+                          _savePidValues();
+                          _sendPidCommandDebounced('dtc=$value');
+                        },
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Schnell',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: CupertinoColors.secondaryLabel,
+                            ),
+                          ),
+                          Text(
+                            '${dFilterTimeConstantS.toStringAsFixed(3)} s',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                          Text(
+                            'Glatt',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: CupertinoColors.secondaryLabel,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 100), // Space for floating nav
+              ]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  
+  Widget _buildMiniStat(String label, String value, Color color) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: CupertinoColors.secondaryLabel,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 16,
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+  
+  Widget _buildAxisSection(String title, Color color, List<Widget> controls) {
+    return Container(
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemBackground,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: CupertinoColors.systemGrey.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: CupertinoColors.systemGrey5,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: CupertinoColors.label,
                   ),
                 ),
               ],
             ),
           ),
-          initiallyExpanded: isStatusPanelExpanded,
-          onExpansionChanged: (expanded) {
-            setState(() {
-              isStatusPanelExpanded = expanded;
-            });
-          },
+          ...controls,
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildCompactPidRow(
+    String label,
+    double posValue,
+    double negValue,
+    String posParam,
+    String negParam,
+    TextEditingController posController,
+    TextEditingController negController,
+    Function(double) onPosChanged,
+    Function(double) onNegChanged,
+    {bool isD = false}
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: CupertinoColors.systemGrey6,
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Label
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemGrey5,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: CupertinoColors.label,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          
+          // Positive Value
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _showValuePicker(
+                context,
+                '$label+',
+                posValue,
+                isD ? 0.001 : (label == 'P' ? 0.5 : 0.1),
+                (value) {
+                  onPosChanged(value);
+                  _savePidValues();
+                  _sendPidCommandDebounced('$posParam=$value');
+                },
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemGrey6,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Icon(CupertinoIcons.plus_circle,
+                        size: 16, color: CupertinoColors.systemGrey),
+                    Text(
+                      posValue.toStringAsFixed(isD ? 3 : 2),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          
+          // Negative Value
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _showValuePicker(
+                context,
+                '$label-',
+                negValue,
+                isD ? 0.001 : (label == 'P' ? 0.5 : 0.1),
+                (value) {
+                  onNegChanged(value);
+                  _savePidValues();
+                  _sendPidCommandDebounced('$negParam=$value');
+                },
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemGrey6,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Icon(CupertinoIcons.minus_circle,
+                        size: 16, color: CupertinoColors.systemGrey),
+                    Text(
+                      negValue.toStringAsFixed(isD ? 3 : 2),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _showValuePicker(
+    BuildContext context,
+    String title,
+    double currentValue,
+    double step,
+    Function(double) onChanged,
+  ) {
+    double tempValue = currentValue;
+    
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => Container(
+        height: 300,
+        color: CupertinoColors.systemBackground,
+        child: Column(
           children: [
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
                 border: Border(
-                  top: BorderSide(color: Colors.grey.shade300),
+                  bottom: BorderSide(
+                    color: CupertinoColors.systemGrey5,
+                    width: 0.5,
+                  ),
                 ),
               ),
-              child: Column(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Live Sensor-Daten
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildStatusIndicator('X-Sensor', '${sensorX.toStringAsFixed(2)} mT', Colors.blue),
-                      _buildStatusIndicator('Y-Sensor', '${sensorY.toStringAsFixed(2)} mT', Colors.green),
-                      _buildStatusIndicator('Duty 1', duty1.toString(), Colors.orange),
-                      _buildStatusIndicator('Duty 2', duty2.toString(), Colors.purple),
-                    ],
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Abbrechen'),
                   ),
-                  const SizedBox(height: 12),
-
-                  // Frequenz und Filter
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: loopFrequency < 850 ? Colors.red.shade50 : Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: loopFrequency < 850 ? Colors.red.shade300 : Colors.green.shade300,
-                      ),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
                     ),
+                  ),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () {
+                      onChanged(tempValue);
+                      Navigator.pop(context);
+                    },
+                    child: Text(
+                      'Fertig',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Row(
+                children: [
+                  // Quick adjustment buttons
+                  Container(
+                    width: 80,
                     child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.speed,
-                                  color: loopFrequency < 850 ? Colors.red : Colors.green,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Regelkreis-Frequenz',
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                    ),
-                                    Text(
-                                      '${loopFrequency.toStringAsFixed(1)} Hz',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: loopFrequency < 850 ? Colors.red : Colors.green,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            Container(
-                              width: 1,
-                              height: 40,
-                              color: Colors.grey.shade300,
-                            ),
-                            Row(
-                              children: [
-                                const Icon(Icons.bluetooth, color: Colors.blue, size: 20),
-                                const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'BLE-Datenrate',
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                    ),
-                                    Text(
-                                      '${bleFrequency.toStringAsFixed(0)} Hz',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: bleFrequency < 100 ? Colors.orange : Colors.blue,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            Container(
-                              width: 1,
-                              height: 40,
-                              color: Colors.grey.shade300,
-                            ),
-                            Row(
-                              children: [
-                                const Icon(Icons.filter_alt, color: Colors.blue, size: 20),
-                                const SizedBox(width: 8),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Aktiver Filter',
-                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                    ),
-                                    Text(
-                                      _getFilterName(currentFilter),
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.blue,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        if (loopFrequency > 0 && loopFrequency < 850) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
-                              Icon(Icons.warning, color: Colors.orange, size: 16),
-                              SizedBox(width: 4),
-                              Text(
-                                'Frequenz unter Zielwert (900 Hz)',
-                                style: TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        ],
+                        _buildQuickButton('-10', () {
+                          setState(() => tempValue = math.max(0, tempValue - step * 10));
+                        }),
+                        _buildQuickButton('-1', () {
+                          setState(() => tempValue = math.max(0, tempValue - step));
+                        }),
+                        _buildQuickButton('+1', () {
+                          setState(() => tempValue = tempValue + step);
+                        }),
+                        _buildQuickButton('+10', () {
+                          setState(() => tempValue = tempValue + step * 10);
+                        }),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-
-                  // Buttons
-                  Wrap(
-                    alignment: WrapAlignment.spaceEvenly, // Behält eine ähnliche Verteilung bei
-                    spacing: 8.0, // Horizontaler Abstand zwischen den Buttons
-                    runSpacing: 4.0, // Vertikaler Abstand, wenn Buttons umbrechen
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: showPresetDialog,
-                        icon: const Icon(Icons.settings_suggest, size: 20),
-                        label: const Text('PID Presets'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Ggf. Padding beibehalten oder anpassen
-                        ),
+                  Expanded(
+                    child: CupertinoPicker(
+                      scrollController: FixedExtentScrollController(
+                        initialItem: (currentValue / step).round(),
                       ),
-                      ElevatedButton.icon(
-                        onPressed: showFilterDialog,
-                        icon: const Icon(Icons.filter_alt, size: 20),
-                        label: const Text('Sensor Filter'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.purple,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Ggf. Padding beibehalten oder anpassen
-                        ),
-                      ),
-                      if (isCalibrated == false)
-                        Padding( // Optional: Padding um den IconButton für konsistenten Abstand
-                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                          child: IconButton(
-                            onPressed: () {
-                              _tabController.animateTo(2);
-                            },
-                            icon: const Icon(Icons.warning, color: Colors.orange),
-                            tooltip: 'Kalibrierung fehlt!',
+                      itemExtent: 40,
+                      onSelectedItemChanged: (index) {
+                        tempValue = index * step;
+                      },
+                      children: List.generate(
+                        title.contains('D') ? 10000 : (title.contains('P') ? 400 : 1000),
+                        (index) => Center(
+                          child: Text(
+                            (index * step).toStringAsFixed(title.contains('D') ? 3 : 2),
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
                         ),
-                      ElevatedButton.icon(
-                        onPressed: disconnect,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // Ggf. Padding beibehalten oder anpassen
-                        ),
-                        icon: const Icon(Icons.close, size: 18),
-                        label: const Text('Trennen'),
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
             ),
           ],
         ),
-
-        Expanded(
-          child: ListView(
-            children: [
-              // X-ACHSE QUADRANTEN-REGLER
-              ExpansionTile(
-                title: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: const Text(
-                    'X-Achse Regler (Vier-Quadranten)',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
-                  ),
-                ),
-                backgroundColor: Colors.blue.shade50,
-                collapsedBackgroundColor: Colors.blue.shade50,
-                initiallyExpanded: true,
-                children: [
-                  // X-Achse Positive Richtung
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    color: Colors.blue.shade100,
-                    child: const Text(
-                      'X+ (Positive Richtung)',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Kp X+ (Proportional)',
-                    param: 'kpxp',
-                    value: kpX_pos,
-                    min: 20,
-                    max: 200,
-                    smallStep: 0.05,
-                    largeStep: 1,
-                    controller: kpXPosController,
-                    onChanged: (value) {
-                      setState(() => kpX_pos = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kpxp=$value');
-                    },
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Ki X+ (Integral)',
-                    param: 'kixp',
-                    value: kiX_pos,
-                    min: 0,
-                    max: 100,
-                    smallStep: 0.1,
-                    largeStep: 1,
-                    controller: kiXPosController,
-                    onChanged: (value) {
-                      setState(() => kiX_pos = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kixp=$value');
-                    },
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Kd X+ (Differential)',
-                    param: 'kdxp',
-                    value: kdX_pos,
-                    min: 0,
-                    max: 10,
-                    smallStep: 0.001,
-                    largeStep: 0.01,
-                    controller: kdXPosController,
-                    onChanged: (value) {
-                      setState(() => kdX_pos = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kdxp=$value');
-                    },
-                  ),
-
-                  // X-Achse Negative Richtung
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    color: Colors.blue.shade100,
-                    child: const Text(
-                      'X- (Negative Richtung)',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Kp X- (Proportional)',
-                    param: 'kpxn',
-                    value: kpX_neg,
-                    min: 20,
-                    max: 200,
-                    smallStep: 0.05,
-                    largeStep: 1,
-                    controller: kpXNegController,
-                    onChanged: (value) {
-                      setState(() => kpX_neg = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kpxn=$value');
-                    },
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Ki X- (Integral)',
-                    param: 'kixn',
-                    value: kiX_neg,
-                    min: 0,
-                    max: 100,
-                    smallStep: 0.1,
-                    largeStep: 1,
-                    controller: kiXNegController,
-                    onChanged: (value) {
-                      setState(() => kiX_neg = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kixn=$value');
-                    },
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Kd X- (Differential)',
-                    param: 'kdxn',
-                    value: kdX_neg,
-                    min: 0,
-                    max: 10,
-                    smallStep: 0.001,
-                    largeStep: 0.01,
-                    controller: kdXNegController,
-                    onChanged: (value) {
-                      setState(() => kdX_neg = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kdxn=$value');
-                    },
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              // Y-ACHSE QUADRANTEN-REGLER
-              ExpansionTile(
-                title: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: const Text(
-                    'Y-Achse Regler (Vier-Quadranten)',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
-                  ),
-                ),
-                backgroundColor: Colors.green.shade50,
-                collapsedBackgroundColor: Colors.green.shade50,
-                initiallyExpanded: true,
-                children: [
-                  // Y-Achse Positive Richtung
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    color: Colors.green.shade100,
-                    child: const Text(
-                      'Y+ (Positive Richtung)',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Kp Y+ (Proportional)',
-                    param: 'kpyp',
-                    value: kpY_pos,
-                    min: 20,
-                    max: 200,
-                    smallStep: 0.05,
-                    largeStep: 1,
-                    controller: kpYPosController,
-                    onChanged: (value) {
-                      setState(() => kpY_pos = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kpyp=$value');
-                    },
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Ki Y+ (Integral)',
-                    param: 'kiyp',
-                    value: kiY_pos,
-                    min: 0,
-                    max: 100,
-                    smallStep: 0.1,
-                    largeStep: 1,
-                    controller: kiYPosController,
-                    onChanged: (value) {
-                      setState(() => kiY_pos = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kiyp=$value');
-                    },
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Kd Y+ (Differential)',
-                    param: 'kdyp',
-                    value: kdY_pos,
-                    min: 0,
-                    max: 10,
-                    smallStep: 0.001,
-                    largeStep: 0.01,
-                    controller: kdYPosController,
-                    onChanged: (value) {
-                      setState(() => kdY_pos = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kdyp=$value');
-                    },
-                  ),
-
-                  // Y-Achse Negative Richtung
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    color: Colors.green.shade100,
-                    child: const Text(
-                      'Y- (Negative Richtung)',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Kp Y- (Proportional)',
-                    param: 'kpyn',
-                    value: kpY_neg,
-                    min: 20,
-                    max: 200,
-                    smallStep: 0.05,
-                    largeStep: 1,
-                    controller: kpYNegController,
-                    onChanged: (value) {
-                      setState(() => kpY_neg = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kpyn=$value');
-                    },
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Ki Y- (Integral)',
-                    param: 'kiyn',
-                    value: kiY_neg,
-                    min: 0,
-                    max: 100,
-                    smallStep: 0.1,
-                    largeStep: 1,
-                    controller: kiYNegController,
-                    onChanged: (value) {
-                      setState(() => kiY_neg = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kiyn=$value');
-                    },
-                  ),
-                  buildImprovedPidControl(
-                    label: 'Kd Y- (Differential)',
-                    param: 'kdyn',
-                    value: kdY_neg,
-                    min: 0,
-                    max: 10,
-                    smallStep: 0.001,
-                    largeStep: 0.01,
-                    controller: kdYNegController,
-                    onChanged: (value) {
-                      setState(() => kdY_neg = value);
-                      _savePidValues();
-                      _sendPidCommandDebounced('kdyn=$value');
-                    },
-                  ),
-                ],
-              ),
-
-              // START: NEUE KARTE FÜR D-TERM FILTER
-              Container(
-                margin: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 8),
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                decoration: BoxDecoration(
-                  color: Colors.purple.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.purple.shade200),
-                ),
-                child: buildImprovedPidControl(
-                  label: 'D-Anteil Glättung (Zeitkonstante)',
-                  param: 'dtc',
-                  value: dFilterTimeConstantS,
-                  min: 0.001,
-                  max: 0.05,
-                  smallStep: 0.0005,
-                  largeStep: 0.001,
-                  controller: dFilterTimeConstantController,
-                  onChanged: (value) {
-                    setState(() => dFilterTimeConstantS = value);
-                    _savePidValues();
-                    _sendPidCommandDebounced('dtc=$value');
-                  },
-                  // HIER IST DIE UI-VERBESSERUNG:
-                  secondaryInfo: Text(
-                    '≈ ${dTermCutoffHz.toStringAsFixed(1)} Hz Grenzfrequenz',
-                    style: TextStyle(fontSize: 12, color: Colors.purple.shade400, fontStyle: FontStyle.italic),
-                  ),
-                ),
-              ),
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 28),
-                child: const Text(
-                  'Erhöhen für mehr Glättung (trägere Reaktion), verringern für schnellere Reaktion (mehr Rauschen). Empfehlung: 0.002 - 0.015 s.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ),
-              // ENDE: NEUE KARTE FÜR D-TERM FILTER
-
-              const SizedBox(height: 20),
-            ],
+      ),
+    );
+  }
+  
+  Widget _buildQuickButton(String label, VoidCallback onPressed) {
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: onPressed,
+      child: Container(
+        width: 50,
+        height: 35,
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemGrey5,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-      ],
+      ),
     );
   }
 
