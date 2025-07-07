@@ -615,6 +615,29 @@ class AverageWidgetModel extends AnalysisWidgetModel {
   }) : super(id: id, title: title, type: 'average', size: size, position: position);
 }
 
+// Widget-Model für RMS-Rauschen Anzeige
+class NoiseWidgetModel extends AnalysisWidgetModel {
+  final bool showXNoise;
+  final bool showYNoise;
+  final bool showQualityIndicator;
+  final bool showNumericValue;
+  final bool showGraph;
+  final int historyLength;
+
+  NoiseWidgetModel({
+    required String id,
+    required String title,
+    this.showXNoise = true,
+    this.showYNoise = true,
+    this.showQualityIndicator = true,
+    this.showNumericValue = true,
+    this.showGraph = false,
+    this.historyLength = 100,
+    AnalysisWidgetSize size = AnalysisWidgetSize.smallSquare,
+    GridPosition? position,
+  }) : super(id: id, title: title, type: 'noise', size: size, position: position);
+}
+
 // NEU: Klasse für Analyse-Tabs mit Widget-Unterstützung
 class AnalysisTab {
   final String title;
@@ -636,7 +659,7 @@ class AnalysisTab {
 
   // Standard-Widget-Konfiguration für neue Tabs
   static List<AnalysisWidgetModel> _getDefaultWidgets() {
-    return [
+    final widgets = [
       ChartWidgetModel(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         title: 'Sensor-Diagramm',
@@ -650,7 +673,18 @@ class AnalysisTab {
         size: AnalysisWidgetSize.fullWidth, // 4x4 Größe
         position: GridPosition(x: 0, y: 0), // Position oben links
       ),
+      NoiseWidgetModel(
+        id: '${DateTime.now().millisecondsSinceEpoch}_noise',
+        title: 'RMS-Rauschen',
+        showXNoise: true,
+        showYNoise: true,
+        showQualityIndicator: true,
+        showNumericValue: true,
+        size: AnalysisWidgetSize.largeSquare, // 2x2 Größe für bessere Sichtbarkeit
+        position: GridPosition(x: 0, y: 4), // Position unter dem Chart
+      ),
     ];
+    return widgets;
   }
 }
 
@@ -4558,6 +4592,10 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       return _buildFrequencyContent(model, isSmallWidget);
     } else if (model is DutyCycleWidgetModel) {
       return _buildDutyCycleContent(model, isSmallWidget);
+    } else if (model is NoiseWidgetModel) {
+      return _buildNoiseContent(model, data, isSmallWidget);
+    } else if (model is AverageWidgetModel) {
+      return _buildAverageContent(model, data, isSmallWidget);
     }
 
     return Container();
@@ -5174,6 +5212,16 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     );
   }
 
+  Widget _buildNoiseContent(NoiseWidgetModel model, List<SensorReading> data, bool isSmall) {
+    // Verwende _buildWidgetContent für konsistente Darstellung
+    return _buildWidgetContent(model, data, activeTabIndex, 0);
+  }
+
+  Widget _buildAverageContent(AverageWidgetModel model, List<SensorReading> data, bool isSmall) {
+    // Verwende _buildWidgetContent für konsistente Darstellung
+    return _buildWidgetContent(model, data, activeTabIndex, 0);
+  }
+
   Widget _buildDutyCycleContent(DutyCycleWidgetModel model, bool isSmall) {
     return Padding(
       padding: EdgeInsets.all(isSmall ? 4 : 8),
@@ -5601,6 +5649,215 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
           ],
         );
 
+      case 'noise':
+        final noiseModel = model as NoiseWidgetModel;
+        
+        // Prüfe ob genügend Daten vorhanden sind
+        if (data.isEmpty || data.length < 10) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  CupertinoIcons.waveform,
+                  size: 48,
+                  color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Warte auf Daten...',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${data.length} von 10 Datenpunkten',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Berechne RMS-Rauschen
+        final recentData = data.length > noiseModel.historyLength 
+            ? data.sublist(data.length - noiseModel.historyLength)
+            : data;
+        
+        final xValues = recentData.map((r) => r.x).toList();
+        final yValues = recentData.map((r) => r.y).toList();
+        
+        // Berechne Durchschnitt
+        double xAvg = 0, yAvg = 0;
+        if (xValues.isNotEmpty) {
+          xAvg = xValues.reduce((a, b) => a + b) / xValues.length;
+          yAvg = yValues.reduce((a, b) => a + b) / yValues.length;
+        }
+        
+        // Berechne RMS (Root Mean Square) Rauschen
+        double noiseX = 0, noiseY = 0;
+        if (xValues.length > 1) {
+          double sumX = 0, sumY = 0;
+          for (int i = 0; i < xValues.length; i++) {
+            sumX += math.pow(xValues[i] - xAvg, 2);
+            sumY += math.pow(yValues[i] - yAvg, 2);
+          }
+          noiseX = math.sqrt(sumX / xValues.length);
+          noiseY = math.sqrt(sumY / yValues.length);
+        }
+
+        // Zeige die Werte an
+        return Row(
+          children: [
+            // X-Achse RMS
+            if (noiseModel.showXNoise)
+              Expanded(
+                child: Container(
+                  margin: EdgeInsets.only(right: noiseModel.showYNoise ? 8 : 0),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'X-ACHSE RMS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                          letterSpacing: 0.06,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            '${(noiseX * 1000).toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w700,
+                              color: _getNoiseColor(noiseX),
+                              letterSpacing: -0.4,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'µT',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (noiseModel.showQualityIndicator) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _getNoiseColor(noiseX).withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _getNoiseQuality(noiseX),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _getNoiseColor(noiseX),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            
+            // Y-Achse RMS
+            if (noiseModel.showYNoise)
+              Expanded(
+                child: Container(
+                  margin: EdgeInsets.only(left: noiseModel.showXNoise ? 8 : 0),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Y-ACHSE RMS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                          letterSpacing: 0.06,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            '${(noiseY * 1000).toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w700,
+                              color: _getNoiseColor(noiseY),
+                              letterSpacing: -0.4,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'µT',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (noiseModel.showQualityIndicator) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _getNoiseColor(noiseY).withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _getNoiseQuality(noiseY),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _getNoiseColor(noiseY),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+
       default:
         return const Center(child: Text('Unbekannter Widget-Typ'));
     }
@@ -5686,6 +5943,255 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
         ],
       ),
     );
+  }
+
+  Widget _buildNoiseWidget(NoiseWidgetModel model, List<SensorReading> data) {
+    print('_buildNoiseWidget called with ${data.length} data points'); // Debug
+    
+    if (data.isEmpty || data.length < 10) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                CupertinoIcons.waveform,
+                size: 48,
+                color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Nicht genügend Daten\nfür Rauschanalyse',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${data.length} von 10 benötigten Datenpunkten',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Berechne Statistiken
+    final recentData = data.length > model.historyLength 
+        ? data.sublist(data.length - model.historyLength)
+        : data;
+    
+    final xValues = recentData.map((r) => r.x).toList();
+    final yValues = recentData.map((r) => r.y).toList();
+    
+    final xAvg = xValues.reduce((a, b) => a + b) / xValues.length;
+    final yAvg = yValues.reduce((a, b) => a + b) / yValues.length;
+    
+    final noiseX = _calculateRMSNoise(xValues, xAvg);
+    final noiseY = _calculateRMSNoise(yValues, yAvg);
+
+    return Column(
+      children: [
+        if (model.showXNoise) ...[
+          Text(
+            'X-ACHSE RMS-RAUSCHEN',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: CupertinoColors.secondaryLabel.resolveFrom(context),
+              letterSpacing: 0.06,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildIOSStatCard(
+                    'RMS',
+                    '${(noiseX * 1000).toStringAsFixed(2)}',
+                    'µT',
+                    _getNoiseColor(noiseX),
+                  ),
+                ),
+                if (model.showQualityIndicator) ...[
+                  const SizedBox(width: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getNoiseColor(noiseX).withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _getNoiseQuality(noiseX),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _getNoiseColor(noiseX),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+        if (model.showXNoise && model.showYNoise) const SizedBox(height: 16),
+        if (model.showYNoise) ...[
+          Text(
+            'Y-ACHSE RMS-RAUSCHEN',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: CupertinoColors.secondaryLabel.resolveFrom(context),
+              letterSpacing: 0.06,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildIOSStatCard(
+                    'RMS',
+                    '${(noiseY * 1000).toStringAsFixed(2)}',
+                    'µT',
+                    _getNoiseColor(noiseY),
+                  ),
+                ),
+                if (model.showQualityIndicator) ...[
+                  const SizedBox(width: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _getNoiseColor(noiseY).withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _getNoiseQuality(noiseY),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _getNoiseColor(noiseY),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+        if (model.showXNoise || model.showYNoise) const SizedBox(height: 16),
+        // Gesamtqualität
+        Container(
+          decoration: BoxDecoration(
+            color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'GESAMTQUALITÄT',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _getNoiseColor((noiseX + noiseY) / 2).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _getNoiseQualityText(noiseX, noiseY),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _getNoiseColor((noiseX + noiseY) / 2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Hilfsfunktionen für Noise Widget
+  String _getNoiseQuality(double noiseMT) {
+    double noiseUT = noiseMT * 1000;
+    if (noiseUT < 10) {
+      return 'Exzellent';
+    } else if (noiseUT < 20) {
+      return 'Sehr gut';
+    } else if (noiseUT < 50) {
+      return 'Gut';
+    } else if (noiseUT < 100) {
+      return 'Akzeptabel';
+    } else {
+      return 'Verbesserung nötig';
+    }
+  }
+
+  Color _getNoiseColor(double noiseMT) {
+    double noiseUT = noiseMT * 1000;
+    if (noiseUT < 30) {
+      return Colors.green;
+    } else if (noiseUT < 50) {
+      return Colors.lightGreen;
+    } else if (noiseUT < 100) {
+      return Colors.orange;
+    } else {
+      return Colors.red;
+    }
+  }
+
+  String _getNoiseQualityText(double noiseX, double noiseY) {
+    double avgNoiseUT = (noiseX + noiseY) * 500;
+    if (avgNoiseUT < 20) {
+      return 'Exzellent';
+    } else if (avgNoiseUT < 40) {
+      return 'Sehr gut';
+    } else if (avgNoiseUT < 70) {
+      return 'Gut';
+    } else if (avgNoiseUT < 100) {
+      return 'Akzeptabel';
+    } else {
+      return 'Verbesserung nötig';
+    }
+  }
+
+  // RMS-Rauschen berechnen
+  double _calculateRMSNoise(List<double> values, double mean) {
+    if (values.length < 2) return 0;
+    double variance = 0;
+    for (double val in values) {
+      variance += math.pow(val - mean, 2);
+    }
+    return math.sqrt(variance / values.length);
   }
 
   Widget _buildIOSWidgetOption({
@@ -6075,6 +6581,20 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                                 );
                               },
                             ),
+                            _buildIOSWidgetOption(
+                              icon: CupertinoIcons.waveform,
+                              iconColor: CupertinoColors.systemPurple,
+                              title: 'RMS-Rauschen',
+                              subtitle: 'Rauschpegel mit Qualitätsanzeige',
+                              onTap: () {
+                                Navigator.pop(context);
+                                _showWidgetSizeSelector(
+                                  tabIndex: tabIndex,
+                                  widgetType: 'noise',
+                                  title: 'RMS-Rauschen',
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -6349,6 +6869,13 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
           size: size,
         );
         break;
+      case 'noise':
+        widget = NoiseWidgetModel(
+          id: id,
+          title: title,
+          size: size,
+        );
+        break;
       default:
         return;
     }
@@ -6496,6 +7023,14 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
           child: Padding(
             padding: EdgeInsets.all(32),
             child: Text('Durchschnitt-Einstellungen kommen bald...'),
+          ),
+        );
+
+      case 'noise':
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: Text('Rausch-Einstellungen kommen bald...'),
           ),
         );
 
@@ -7639,6 +8174,8 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
         return 'PWM Duty Cycle Werte';
       case 'average':
         return 'Durchschnittswerte der Messungen';
+      case 'noise':
+        return 'RMS-Rauschen mit Qualitätsanzeige';
       default:
         return '';
     }
@@ -7674,6 +8211,9 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
           break;
         case 'average':
           newWidget = AverageWidgetModel(id: id, title: template.title);
+          break;
+        case 'noise':
+          newWidget = NoiseWidgetModel(id: id, title: template.title);
           break;
         default:
           return;
@@ -10500,7 +11040,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: loopFrequency < 850 ? Colors.red.shade50 : Colors.green.shade50,
+                    color: loopFrequency < 1800 ? Colors.red.shade50 : Colors.green.shade50,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -10508,14 +11048,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       Icon(
                         Icons.speed,
                         size: 16,
-                        color: loopFrequency < 850 ? Colors.red : Colors.green,
+                        color: loopFrequency < 1800 ? Colors.red : Colors.green,
                       ),
                       const SizedBox(width: 6),
                       Text(
                         '${loopFrequency.toStringAsFixed(0)} Hz',
                         style: TextStyle(
                           fontSize: 14,
-                          color: loopFrequency < 850 ? Colors.red : Colors.green,
+                          color: loopFrequency < 1800 ? Colors.red : Colors.green,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -10774,6 +11314,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       return 'Verbesserung nötig';
     }
   }
+
 
   Widget _buildDualAxisChart({List<SensorReading>? data}) {
     // Use provided data or fall back to sensorHistory
@@ -12191,7 +12732,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                           color: CupertinoColors.systemGrey6,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: loopFrequency < 850
+                            color: loopFrequency < 1800
                                 ? CupertinoColors.systemOrange.withOpacity(0.3)
                                 : CupertinoColors.systemGreen.withOpacity(0.3),
                             width: 1,
@@ -12203,7 +12744,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               child: _buildMiniStat(
                                 'Loop',
                                 '${loopFrequency.toStringAsFixed(0)} Hz',
-                                loopFrequency < 850
+                                loopFrequency < 1800
                                     ? CupertinoColors.systemOrange
                                     : CupertinoColors.systemGreen,
                               ),
