@@ -1020,8 +1020,7 @@ class _CalibrationDialogState extends State<CalibrationDialog> {
               width: 20,
               height: 20,
               decoration: BoxDecoration(
-                  color: _getQualityColor(data.quality), shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4)]),
+                  color: _getQualityColor(data.quality), shape: BoxShape.circle),
             ),
           ),
           Positioned(bottom: 4, left: 4,
@@ -1414,13 +1413,15 @@ class RealtimeChartPainter extends CustomPainter {
 
       // Horizontale Grid-Linien: EXAKT gleiche Berechnung wie YAxisLabelPainter
       if (yInterval > 0 && (axisMaxY - axisMinY) > 0) {
-        // Gleiche Schleife wie in YAxisLabelPainter.paint()
-        for (double val = axisMinY; val <= axisMaxY + yInterval * 0.1; val += yInterval) {
-          if (val <= axisMaxY) {
-            // WICHTIG: Exakt gleiche Berechnung wie in YAxisLabelPainter
-            double yPos = size.height - ((val - axisMinY) / (axisMaxY - axisMinY)) * size.height;
-            canvas.drawLine(Offset(0, yPos), Offset(size.width, yPos), gridPaint);
-          }
+        // Starte bei einem gerundeten Wert, nicht bei axisMinY
+        // Dies stellt sicher, dass Grid-Linien bei "runden" Werten sind (z.B. 0, 5, 10, etc.)
+        double startVal = (axisMinY / yInterval).ceil() * yInterval;
+        
+        // Zeichne Grid-Linien bei allen Vielfachen von yInterval
+        for (double val = startVal; val <= axisMaxY; val += yInterval) {
+          // WICHTIG: Exakt gleiche Berechnung wie in YAxisLabelPainter
+          double yPos = size.height - ((val - axisMinY) / (axisMaxY - axisMinY)) * size.height;
+          canvas.drawLine(Offset(0, yPos), Offset(size.width, yPos), gridPaint);
         }
       }
       
@@ -1440,6 +1441,39 @@ class RealtimeChartPainter extends CustomPainter {
           canvas.drawLine(Offset(xPos, 0), Offset(xPos, size.height), gridPaint);
         }
       }
+    }
+
+    // Nulllinie separat zeichnen (immer wenn 0 im sichtbaren Bereich ist)
+    // Dies stellt sicher, dass die Nulllinie immer angezeigt wird, auch wenn sie nicht auf einem Grid-Intervall liegt
+    if (axisMinY <= 0 && axisMaxY >= 0) {
+      final zeroLinePaint = Paint()
+        ..color = CupertinoColors.label.withOpacity(0.4)
+        ..strokeWidth = 1.0;
+      
+      // Verwende exakt die gleiche Berechnung wie für Grid-Linien und Y-Labels
+      double zeroY = size.height - ((0.0 - axisMinY) / (axisMaxY - axisMinY)) * size.height;
+      canvas.drawLine(Offset(0, zeroY), Offset(size.width, zeroY), zeroLinePaint);
+    }
+
+    // TOTBAND-Linien zeichnen (DEAD_BAND_XY = 0.02f aus dem ESP-Code)
+    // Im ESP-Code ist DEAD_BAND_XY = 0.02f und alle Werte werden intern in mT verarbeitet
+    // Also ist das TOTBAND = 0.02 mT = 20 µT
+    const double DEAD_BAND_XY = 0.02; // milliTesla
+    final totbandPaint = Paint()
+      ..color = CupertinoColors.systemRed.withOpacity(0.3)
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+    
+    // Obere TOTBAND-Linie bei +0.02 mT
+    if (DEAD_BAND_XY >= axisMinY && DEAD_BAND_XY <= axisMaxY) {
+      double upperTotbandY = size.height - ((DEAD_BAND_XY - axisMinY) / (axisMaxY - axisMinY)) * size.height;
+      canvas.drawLine(Offset(0, upperTotbandY), Offset(size.width, upperTotbandY), totbandPaint);
+    }
+    
+    // Untere TOTBAND-Linie bei -0.02 mT
+    if (-DEAD_BAND_XY >= axisMinY && -DEAD_BAND_XY <= axisMaxY) {
+      double lowerTotbandY = size.height - ((-DEAD_BAND_XY - axisMinY) / (axisMaxY - axisMinY)) * size.height;
+      canvas.drawLine(Offset(0, lowerTotbandY), Offset(size.width, lowerTotbandY), totbandPaint);
     }
 
     // Trigger-Linien zeichnen
@@ -1581,6 +1615,42 @@ class RealtimeChartPainter extends CustomPainter {
       }
     }
     
+    // TEST: Markiere exakte Null-Punkte für Grid-Überprüfung
+    // final zeroTestPaint = Paint()
+    //   ..color = CupertinoColors.systemYellow
+    //   ..style = PaintingStyle.fill;
+    // 
+    // final zeroRingPaint = Paint()
+    //   ..color = CupertinoColors.systemYellow
+    //   ..style = PaintingStyle.stroke
+    //   ..strokeWidth = 1.0;
+    // 
+    // for (int i = 0; i < visibleData.length; i++) {
+    //   final reading = visibleData[i];
+    //   final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+    //   final x = (timeDiff / displayRange) * size.width;
+    //   
+    //   // Prüfe ob X-Wert exakt 0 ist
+    //   if (reading.x == 0.0) {
+    //     // Berechne Y-Position mit der ECHTEN getYPos Funktion (kein Schummeln!)
+    //     final xY = getYPos(reading.x);
+    //     // Zeichne nur 1 Pixel Punkt
+    //     canvas.drawCircle(Offset(x, xY), 0.5, zeroTestPaint);
+    //     // Zeichne dünnen Ring drumherum zur besseren Sichtbarkeit
+    //     canvas.drawCircle(Offset(x, xY), 8.0, zeroRingPaint);
+    //   }
+    //   
+    //   // Prüfe ob Y-Wert exakt 0 ist
+    //   if (reading.y == 0.0) {
+    //     // Berechne Y-Position mit der ECHTEN getYPos Funktion (kein Schummeln!)
+    //     final yY = getYPos(reading.y);
+    //     // Zeichne nur 1 Pixel Punkt
+    //     canvas.drawCircle(Offset(x, yY), 0.5, zeroTestPaint);
+    //     // Zeichne dünnen Ring drumherum zur besseren Sichtbarkeit
+    //     canvas.drawCircle(Offset(x, yY), 8.0, zeroRingPaint);
+    //   }
+    // }
+    
     // Zeichne PWM-Werte wenn aktiviert
     if (showPwmValues && visibleData.isNotEmpty) {
       // PWM1 (duty1) - grüne Linie
@@ -1700,12 +1770,13 @@ class YAxisLabelPainter extends CustomPainter {
     List<double> positions = [];
     if (interval <= 0 || (axisMax - axisMin) <= 0) return positions;
     
+    // Starte bei einem gerundeten Wert
+    double startVal = (axisMin / interval).ceil() * interval;
+    
     // Von unten nach oben, damit die Reihenfolge stimmt
-    for (double val = axisMin; val <= axisMax + interval * 0.1; val += interval) {
-      if (val <= axisMax) {
-        double yPos = height - ((val - axisMin) / (axisMax - axisMin)) * height;
-        positions.add(yPos);
-      }
+    for (double val = startVal; val <= axisMax; val += interval) {
+      double yPos = height - ((val - axisMin) / (axisMax - axisMin)) * height;
+      positions.add(yPos);
     }
     return positions;
   }
@@ -1720,17 +1791,18 @@ class YAxisLabelPainter extends CustomPainter {
 
     List<double> positions = [];
     
+    // Starte bei einem gerundeten Wert für konsistente Grid-Linien
+    double startVal = (axisMin / interval).ceil() * interval;
+    
     // Labels zeichnen und Positionen sammeln
-    for (double val = axisMin; val <= axisMax + interval * 0.1; val += interval) {
-      if (val <= axisMax) {
-        double yPos = size.height - ((val - axisMin) / range) * size.height;
-        positions.add(yPos);
-        
-        textPainter.text = TextSpan(text: _formatLabel(val), style: labelStyle);
-        textPainter.layout();
-        final offset = Offset(size.width - 8 - textPainter.width, yPos - textPainter.height / 2);
-        textPainter.paint(canvas, offset);
-      }
+    for (double val = startVal; val <= axisMax; val += interval) {
+      double yPos = size.height - ((val - axisMin) / range) * size.height;
+      positions.add(yPos);
+      
+      textPainter.text = TextSpan(text: _formatLabel(val), style: labelStyle);
+      textPainter.layout();
+      final offset = Offset(size.width - 8 - textPainter.width, yPos - textPainter.height / 2);
+      textPainter.paint(canvas, offset);
     }
     
     // Positionen an Callback weitergeben
@@ -4038,17 +4110,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
             scale: model.isBeingDragged ? 1.05 : 1.0,
             child: Container(
               decoration: BoxDecoration(
-                color: CupertinoColors.systemBackground.resolveFrom(context),
+                color: CupertinoColors.white, // Weißer Hintergrund für Widgets
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: CupertinoColors.systemGrey.withOpacity(
-                        model.isBeingDragged ? 0.3 : 0.1
-                    ),
-                    blurRadius: model.isBeingDragged ? 20 : 10,
-                    offset: Offset(0, model.isBeingDragged ? 10 : 5),
-                  ),
-                ],
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(20),
@@ -5276,13 +5339,6 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       decoration: BoxDecoration(
         color: CupertinoColors.systemBackground.resolveFrom(context),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withOpacity(0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
       ),
       child: Stack(
         children: [
