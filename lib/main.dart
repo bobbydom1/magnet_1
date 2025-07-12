@@ -1963,6 +1963,9 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
   Timer? _uiUpdateTimer; // NEU: Timer für UI-Updates mit 60 FPS
   bool _isPaused = false; // NEU: Zustand für Pause/Play
   List<double> _gridXPositions = []; // NEU: X-Grid-Positionen vom XAxisLabelPainter
+  
+  // Getter für Buffer-Daten (für Snapshots)
+  List<SensorReading> get bufferData => _buffer.toList();
 
   @override
   void initState() {
@@ -2457,6 +2460,7 @@ class OptimizedChartWidget extends StatelessWidget {
   final bool isRecording;
   final Function(bool) onRecordingChanged;
   final Function(ChartWidgetModel) onModelUpdate;
+  final bool isSnapshot; // Neu: Flag um zu wissen ob es ein Snapshot ist
 
   const OptimizedChartWidget({
     Key? key,
@@ -2466,7 +2470,31 @@ class OptimizedChartWidget extends StatelessWidget {
     required this.isRecording,
     required this.onRecordingChanged,
     required this.onModelUpdate,
+    this.isSnapshot = false, // Standard ist Live-Modus
   }) : super(key: key);
+
+  // Intelligente Datenreduktion für bessere Performance
+  List<SensorReading> _reduceDataForDisplay(List<SensorReading> data, int maxPoints) {
+    if (data.length <= maxPoints) return data;
+    
+    // Verwende jeden n-ten Punkt für gleichmäßige Verteilung
+    final step = data.length / maxPoints;
+    final reduced = <SensorReading>[];
+    
+    for (int i = 0; i < maxPoints; i++) {
+      final index = (i * step).round();
+      if (index < data.length) {
+        reduced.add(data[index]);
+      }
+    }
+    
+    // Stelle sicher, dass der letzte Punkt enthalten ist
+    if (reduced.isEmpty || reduced.last != data.last) {
+      reduced.add(data.last);
+    }
+    
+    return reduced;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2481,37 +2509,70 @@ class OptimizedChartWidget extends StatelessWidget {
         ),
       );
     }
+    
+    // Reduziere Daten für Performance (max 1000 Punkte für flüssige Darstellung)
+    final reducedData = isSnapshot ? _reduceDataForDisplay(displayData, 1000) : displayData;
+
 
     // Berechne den tatsächlichen X-Bereich für volle Nutzung
-    final now = DateTime.now();
-    final startTime = now.subtract(Duration(milliseconds: (model.displayRange * 1000).round()));
+    DateTime startTime;
+    if (isSnapshot && displayData.isNotEmpty) {
+      // Für Snapshots: Verwende den ersten Timestamp als Referenz
+      startTime = displayData.first.timestamp;
+    } else {
+      // Für Live-Daten: Verwende die aktuelle Zeit minus Display-Range
+      final now = DateTime.now();
+      startTime = now.subtract(Duration(milliseconds: (model.displayRange * 1000).round()));
+    }
 
     double actualMinX = 0;
     double actualMaxX = model.displayRange.toDouble();
 
-    final spots = displayData.map((reading) {
+    final spots = reducedData.map((reading) {
       final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
       return FlSpot(timeDiff, reading.y);
     }).toList();
 
     if (spots.isNotEmpty) {
       actualMinX = spots.first.x;
-      actualMaxX = math.max(spots.last.x, actualMinX + 1);
+      if (isSnapshot) {
+        // Für Snapshots: Zeige die gesamte Zeitspanne der Daten
+        actualMaxX = spots.last.x;
+        if (actualMaxX <= actualMinX) {
+          actualMaxX = actualMinX + 1; // Mindestens 1 Sekunde Breite
+        }
+      } else {
+        // Für Live-Daten: Verwende die konfigurierte Display-Range
+        actualMaxX = math.max(spots.last.x, actualMinX + 1);
+      }
     }
 
     // Berechne Min/Max für beide Achsen
-    final xSensorValues = displayData.map((r) => r.x).toList();
-    final ySensorValues = displayData.map((r) => r.y).toList();
+    final xSensorValues = reducedData.map((r) => r.x).toList();
+    final ySensorValues = reducedData.map((r) => r.y).toList();
 
     final allValues = [...xSensorValues, ...ySensorValues];
-    final minValue = allValues.isNotEmpty ? allValues.reduce(math.min) : 0;
-    final maxValue = allValues.isNotEmpty ? allValues.reduce(math.max) : 100;
+    double minValue = 0;
+    double maxValue = 100;
+    
+    if (allValues.isNotEmpty) {
+      minValue = allValues.reduce(math.min);
+      maxValue = allValues.reduce(math.max);
+      
+      
+      // Falls alle Werte gleich sind, füge einen kleinen Bereich hinzu
+      if (minValue == maxValue) {
+        minValue = minValue - 10;
+        maxValue = maxValue + 10;
+      }
+    }
+    
     final padding = (maxValue - minValue) * 0.1;
 
     return Column(
       children: [
-        // Kontrollen für Zeitskala und Play/Pause
-        if (model.showTimeControls) Container(
+        // Kontrollen für Zeitskala und Play/Pause (nur für Live-Daten)
+        if (model.showTimeControls && !isSnapshot) Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2681,13 +2742,22 @@ class OptimizedChartWidget extends StatelessWidget {
                         reservedSize: 30,
                         interval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 4 : (actualMaxX - actualMinX) / 5,
                         getTitlesWidget: (value, meta) {
-                          // Zeige Zeitangaben relativ zur aktuellen Zeit
-                          final seconds = model.displayRange - value;
                           String label;
-                          if (seconds < 60) {
-                            label = '-${seconds.toInt()}s';
+                          if (isSnapshot) {
+                            // Für Snapshots: Zeige Zeit seit Beginn der Aufnahme
+                            if (value < 60) {
+                              label = '${value.toInt()}s';
+                            } else {
+                              label = '${(value / 60).toStringAsFixed(1)}m';
+                            }
                           } else {
-                            label = '-${(seconds / 60).toStringAsFixed(1)}m';
+                            // Für Live-Daten: Zeige Zeit relativ zur aktuellen Zeit
+                            final seconds = model.displayRange - value;
+                            if (seconds < 60) {
+                              label = '-${seconds.toInt()}s';
+                            } else {
+                              label = '-${(seconds / 60).toStringAsFixed(1)}m';
+                            }
                           }
                           return Padding(
                             padding: const EdgeInsets.only(top: 4),
@@ -2715,15 +2785,22 @@ class OptimizedChartWidget extends StatelessWidget {
                   lineBarsData: [
                     // X-Achse Daten (rot)
                     LineChartBarData(
-                      spots: displayData.map((reading) {
+                      spots: reducedData.map((reading) {
                         final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
                         return FlSpot(timeDiff, reading.x.toDouble());
                       }).toList(),
                       isCurved: false,
                       color: CupertinoColors.systemRed,
-                      barWidth: model.lineThickness,
+                      barWidth: model.showLines ? model.lineThickness : 0,
                       isStrokeCapRound: true,
-                      dotData: FlDotData(show: false),
+                      dotData: FlDotData(
+                        show: model.showDataPoints,
+                        getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                          radius: model.pointRadius,
+                          color: CupertinoColors.systemRed,
+                          strokeWidth: 0,
+                        ),
+                      ),
                       belowBarData: BarAreaData(show: false),
                     ),
                     // Y-Achse Daten (blau)
@@ -2731,9 +2808,16 @@ class OptimizedChartWidget extends StatelessWidget {
                       spots: spots,
                       isCurved: false,
                       color: CupertinoColors.activeBlue,
-                      barWidth: model.lineThickness,
+                      barWidth: model.showLines ? model.lineThickness : 0,
                       isStrokeCapRound: true,
-                      dotData: FlDotData(show: false),
+                      dotData: FlDotData(
+                        show: model.showDataPoints,
+                        getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                          radius: model.pointRadius,
+                          color: CupertinoColors.activeBlue,
+                          strokeWidth: 0,
+                        ),
+                      ),
                       belowBarData: BarAreaData(show: false),
                     ),
                   ],
@@ -2819,6 +2903,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     });
 
 
+    // ENTFERNT: Stream-Subscription die zu Fehlern führte
+
     // Initialisiere Orientierung und Grid-Zeilen
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return; // Prüfe ob Widget noch existiert
@@ -2873,14 +2959,120 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     final now = DateTime.now();
     final title = 'Snapshot ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
 
-    // Erstelle eine echte Kopie der Daten
-    final snapshotData = List<SensorReading>.from(widget.sensorDataManager.history);
+    // Finde das erste Chart-Widget im LIVE Tab, um die displayRange zu bekommen
+    // Wichtig: Wir müssen immer vom Live-Tab ausgehen, auch wenn wir gerade einen Snapshot anschauen
+    double currentDisplayRange = 10.0; // Standard
+    
+    // Finde den Live-Tab (normalerweise der erste)
+    for (var tab in openTabs) {
+      if (tab.isLive) {
+        for (var widget in tab.widgets) {
+          if (widget is ChartWidgetModel) {
+            currentDisplayRange = widget.displayRange;
+            break;
+          }
+        }
+        break;
+      }
+    }
+
+    // Hole alle Daten aus der History
+    final allData = widget.sensorDataManager.history;
+    
+    print('DEBUG Snapshot: History hat ${allData.length} Datenpunkte');
+    print('DEBUG Snapshot: Display Range = ${currentDisplayRange}s');
+    
+    if (allData.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Keine Daten für Snapshot vorhanden'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    
+    // Debug: Zeige die letzten Datenpunkte
+    if (allData.length > 0) {
+      final lastData = allData.last;
+      print('DEBUG Snapshot: Letzter Datenpunkt: ${lastData.timestamp} (vor ${now.difference(lastData.timestamp).inSeconds}s)');
+    }
+    
+    final cutoffTime = now.subtract(Duration(milliseconds: (currentDisplayRange * 1000).round()));
+    print('DEBUG Snapshot: Cutoff Zeit = $cutoffTime');
+    
+    // Filtere Daten basierend auf dem Zeitfenster
+    final visibleData = allData.where((reading) => 
+      reading.timestamp.isAfter(cutoffTime)
+    ).toList();
+    
+    print('DEBUG Snapshot: ${visibleData.length} Datenpunkte nach Zeitfilter');
+    
+    if (visibleData.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Keine Daten im Zeitfenster der letzten ${currentDisplayRange}s gefunden'),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+    
+    // Erstelle eine echte Kopie der sichtbaren Daten
+    final snapshotData = visibleData.map((reading) => SensorReading(
+      timestamp: reading.timestamp,
+      x: reading.x,
+      y: reading.y,
+      duty1: reading.duty1,
+      duty2: reading.duty2,
+    )).toList();
+
+
+    // Berechne die tatsächliche Zeitspanne der Daten
+    double displayRange = currentDisplayRange;
+    if (snapshotData.length >= 2) {
+      final duration = snapshotData.last.timestamp.difference(snapshotData.first.timestamp);
+      displayRange = duration.inMilliseconds / 1000.0; // In Sekunden
+      // Füge etwas Puffer hinzu (10%)
+      displayRange = displayRange * 1.1;
+    }
+
+    // Erstelle Widgets mit angepasster displayRange
+    final widgets = [
+      ChartWidgetModel(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: 'Sensor-Diagramm',
+        lineThickness: 2.0,
+        showTimeControls: false, // Keine Zeitkontrollen für Snapshots
+        showDataPoints: false,
+        pointRadius: 2.0,
+        showLines: true,
+        showXAxisLabels: true,
+        showYAxisLabels: true,
+        displayRange: displayRange, // Verwende berechnete displayRange
+        size: AnalysisWidgetSize.fullWidth,
+        position: GridPosition(x: 0, y: 0),
+      ),
+      NoiseWidgetModel(
+        id: '${DateTime.now().millisecondsSinceEpoch}_noise',
+        title: 'RMS-Rauschen',
+        showXNoise: true,
+        showYNoise: true,
+        showQualityIndicator: true,
+        showNumericValue: true,
+        size: AnalysisWidgetSize.largeSquare,
+        position: GridPosition(x: 0, y: 4),
+      ),
+    ];
 
     setState(() {
       openTabs.add(AnalysisTab(
         title: title,
         isLive: false,
         data: snapshotData,
+        widgets: widgets,
       ));
       activeTabIndex = openTabs.length - 1;
     });
@@ -3200,9 +3392,9 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                             'Als CSV exportieren',
                             style: TextStyle(fontSize: 17),
                           ),
-                          onTap: () {
+                          onTap: () async {
                             Navigator.pop(context);
-                            _exportSnapshotToCSV(activeTab);
+                            await _exportSnapshotToCSV(activeTab);
                           },
                         ),
                       ],
@@ -3218,19 +3410,49 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     );
   }
 
-  void _exportSnapshotToCSV(AnalysisTab tab) async {
-    // Verwende die bestehende Export-Funktionalität
-    // Erstelle temporäre CSV-Daten
-    String csv = 'Timestamp,X (mT),Y (mT),Duty1,Duty2\n';
-    for (var reading in tab.data) {
-      csv += '${reading.timestamp.toIso8601String()},${reading.x},${reading.y},${reading.duty1},${reading.duty2}\n';
+  Future<void> _exportSnapshotToCSV(AnalysisTab tab) async {
+    try {
+      // Zeige Ladeindikator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        },
+      );
+
+      // Verwende StringBuffer für bessere Performance
+      final buffer = StringBuffer();
+      buffer.writeln('Timestamp,X (mT),Y (mT),Duty1,Duty2');
+      
+      for (var reading in tab.data) {
+        buffer.writeln('${reading.timestamp.toIso8601String()},${reading.x},${reading.y},${reading.duty1},${reading.duty2}');
+      }
+
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/maglev_${tab.title.replaceAll(':', '-')}.csv');
+      await file.writeAsString(buffer.toString());
+
+      // Schließe Ladeindikator
+      Navigator.of(context).pop();
+
+      // Teile die Datei
+      await Share.shareXFiles([XFile(file.path)], text: 'MagLev Sensor Data - ${tab.title}');
+    } catch (e) {
+      // Schließe Ladeindikator falls noch offen
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fehler beim Exportieren: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
-
-    final directory = await getApplicationDocumentsDirectory();
-    final file = File('${directory.path}/maglev_${tab.title.replaceAll(':', '-')}.csv');
-    await file.writeAsString(csv);
-
-    Share.shareXFiles([XFile(file.path)], text: 'MagLev Sensor Data - ${tab.title}');
   }
 
   void _renameTab(int index) {
@@ -3578,9 +3800,28 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
   }
 
   Widget _buildSnapshotToolbar() {
+    final activeTab = openTabs[activeTabIndex];
+    final dataCount = activeTab.data.length;
+    final displayText = dataCount > 1000 
+        ? '$dataCount Datenpunkte (1000 angezeigt)' 
+        : '$dataCount Datenpunkte';
+    
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
+        // Datenpunkt-Anzeige
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Text(
+            displayText,
+            style: TextStyle(
+              color: CupertinoColors.systemGrey,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const Spacer(),
         IconButton(
           icon: const Icon(Icons.zoom_in),
           onPressed: null, // Platzhalter
@@ -4667,6 +4908,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
   Widget _buildChartContent(ChartWidgetModel model, List<SensorReading> data, bool isSmall) {
     final activeTab = openTabs[activeTabIndex];
 
+
     // ### DIE LOGIK ###
     // Ist der Tab "live"?
     if (activeTab.isLive) {
@@ -4701,6 +4943,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
         model: model,
         displayData: data, // Hier werden die statischen Snapshot-Daten verwendet
         isSmall: isSmall,
+        isSnapshot: true, // Markiere als Snapshot für korrekte Zeitberechnung
         isRecording: widget.isRecording, // Ist hier irrelevant, aber wird erwartet
         onRecordingChanged: widget.onRecordingChanged,
         onModelUpdate: (updatedModel) {
@@ -9828,27 +10071,57 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     );
   }
 
-  void exportSensorDataToCSV() async {
+  Future<void> exportSensorDataToCSV() async {
     if (_sensorDataManager.history.isEmpty) {
       showError('Keine Daten zum Exportieren vorhanden');
       return;
     }
 
-    // Erstelle CSV-Daten
-    String csv = 'Timestamp,X (mT),Y (mT),Duty1,Duty2\n';
-    for (var reading in _sensorDataManager.history) {
-      csv += '${reading.timestamp.toIso8601String()},${reading.x},${reading.y},${reading.duty1},${reading.duty2}\n';
+    try {
+      // Zeige Ladeindikator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        },
+      );
+
+      // Verwende StringBuffer für bessere Performance
+      final buffer = StringBuffer();
+      buffer.writeln('Timestamp,X (mT),Y (mT),Duty1,Duty2');
+      
+      for (var reading in _sensorDataManager.history) {
+        buffer.writeln('${reading.timestamp.toIso8601String()},${reading.x},${reading.y},${reading.duty1},${reading.duty2}');
+      }
+
+      // Speichere in temporäre Datei
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
+      final file = File('${directory.path}/maglev_sensor_data_$timestamp.csv');
+      await file.writeAsString(buffer.toString());
+
+      // Schließe Ladeindikator
+      Navigator.of(context).pop();
+
+      // Teile die Datei
+      await Share.shareXFiles([XFile(file.path)], text: 'MagLev Sensor Data Export');
+      showSuccess('Daten wurden exportiert');
+    } catch (e) {
+      // Schließe Ladeindikator falls noch offen
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fehler beim Exportieren: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
-
-    // Speichere in temporäre Datei
-    final directory = await getApplicationDocumentsDirectory();
-    final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
-    final file = File('${directory.path}/maglev_sensor_data_$timestamp.csv');
-    await file.writeAsString(csv);
-
-    // Teile die Datei
-    Share.shareXFiles([XFile(file.path)], text: 'MagLev Sensor Data Export');
-    showSuccess('Daten wurden exportiert');
   }
 
   String _getFilterName(int filter) {
@@ -12653,7 +12926,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     _displayHistoryLength = value;
                   });
                 },
-                onExportToCSV: () => exportSensorDataToCSV(),
+                onExportToCSV: () async => await exportSensorDataToCSV(),
                 onClearHistory: () {
                   setState(() {
                     _sensorDataManager.clear();
@@ -14969,6 +15242,3 @@ Map<String, double> _calculateNiceAxisValues(double dataMin, double dataMax, {in
   
   return {'axisMin': axisMin, 'axisMax': axisMax, 'interval': niceInterval};
 }
-
-
-
