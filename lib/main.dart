@@ -22,6 +22,112 @@ import 'dart:ui';
 // App Version
 const String APP_VERSION = "v13.0";
 
+// Stateful Widget für Duty Cycle mit animiertem Rahmen bei Vorzeichenwechsel
+class _DutyCycleItemWithBorder extends StatefulWidget {
+  final String label;
+  final int duty;
+  final bool isSmall;
+
+  const _DutyCycleItemWithBorder({
+    required this.label,
+    required this.duty,
+    required this.isSmall,
+  });
+
+  @override
+  _DutyCycleItemWithBorderState createState() => _DutyCycleItemWithBorderState();
+}
+
+class _DutyCycleItemWithBorderState extends State<_DutyCycleItemWithBorder> 
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<Color?> _colorAnimation;
+  int? _previousSign;
+  
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(seconds: 5),
+      vsync: this,
+    );
+    
+    _colorAnimation = ColorTween(
+      begin: CupertinoColors.systemRed,
+      end: CupertinoColors.white,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    ));
+    
+    _previousSign = widget.duty == 0 ? 0 : (widget.duty > 0 ? 1 : -1);
+  }
+  
+  @override
+  void didUpdateWidget(_DutyCycleItemWithBorder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // Prüfe auf Vorzeichenwechsel
+    final currentSign = widget.duty == 0 ? 0 : (widget.duty > 0 ? 1 : -1);
+    final oldSign = oldWidget.duty == 0 ? 0 : (oldWidget.duty > 0 ? 1 : -1);
+    
+    if (currentSign != oldSign && oldWidget.duty != widget.duty) {
+      // Vorzeichenwechsel erkannt - Animation neu starten
+      _animationController.reset();
+      _animationController.forward();
+    }
+    
+    _previousSign = currentSign;
+  }
+  
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _colorAnimation,
+      builder: (context, child) {
+        return Container(
+          padding: EdgeInsets.all(widget.isSmall ? 8 : 12),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: _colorAnimation.value ?? CupertinoColors.white,
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            children: [
+              Text(
+                widget.label,
+                style: TextStyle(
+                  fontSize: widget.isSmall ? 10 : 12,
+                  color: CupertinoColors.systemGrey,
+                ),
+              ),
+              SizedBox(height: widget.isSmall ? 2 : 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  '${widget.duty}',
+                  style: TextStyle(
+                    fontSize: widget.isSmall ? 16 : 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 // Custom Slider Thumb Shape ohne Schatten aber mit Rand
 class _CustomSliderThumbShape extends SliderComponentShape {
   @override
@@ -528,12 +634,12 @@ class ChartWidgetModel extends AnalysisWidgetModel {
     required String title,
     this.showGrid = true,
     this.showLegend = true,
-    this.displayRange = 10.0,
+    this.displayRange = 2.0,
     this.showTimeControls = false,
     this.triggerEnabled = false,
     this.upperThreshold,
     this.lowerThreshold,
-    this.lineThickness = 2.0,
+    this.lineThickness = 0.5,
     this.showDataPoints = false,
     this.pointRadius = 2.0,
     this.showLines = true,
@@ -663,7 +769,7 @@ class AnalysisTab {
       ChartWidgetModel(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         title: 'Sensor-Diagramm',
-        lineThickness: 2.0,
+        lineThickness: 0.5,
         showTimeControls: true, // Aktiviere Zeitkontrollen standardmäßig für Live-Tabs
         showDataPoints: false,
         pointRadius: 2.0,
@@ -673,14 +779,13 @@ class AnalysisTab {
         size: AnalysisWidgetSize.fullWidth, // 4x4 Größe
         position: GridPosition(x: 0, y: 0), // Position oben links
       ),
-      NoiseWidgetModel(
-        id: '${DateTime.now().millisecondsSinceEpoch}_noise',
-        title: 'RMS-Rauschen',
-        showXNoise: true,
-        showYNoise: true,
-        showQualityIndicator: true,
-        showNumericValue: true,
-        size: AnalysisWidgetSize.largeSquare, // 2x2 Größe für bessere Sichtbarkeit
+      DutyCycleWidgetModel(
+        id: '${DateTime.now().millisecondsSinceEpoch}_duty',
+        title: 'Duty Cycles',
+        showDuty1: true,
+        showDuty2: true,
+        showAsGauge: false,
+        size: AnalysisWidgetSize.fullWidth, // 4x4 Größe wie Sensordiagramm
         position: GridPosition(x: 0, y: 4), // Position unter dem Chart
       ),
     ];
@@ -3044,7 +3149,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       ChartWidgetModel(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         title: 'Sensor-Diagramm',
-        lineThickness: 2.0,
+        lineThickness: 0.5,
         showTimeControls: false, // Keine Zeitkontrollen für Snapshots
         showDataPoints: false,
         pointRadius: 2.0,
@@ -5534,35 +5639,18 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          if (model.showDuty1) _buildDutyCycleItem('PWM 1', lastDuty1, isSmall),
-          if (model.showDuty2) _buildDutyCycleItem('PWM 2', lastDuty2, isSmall),
+          if (model.showDuty1) _DutyCycleItemWithBorder(
+            label: 'PWM 1',
+            duty: lastDuty1,
+            isSmall: isSmall,
+          ),
+          if (model.showDuty2) _DutyCycleItemWithBorder(
+            label: 'PWM 2',
+            duty: lastDuty2,
+            isSmall: isSmall,
+          ),
         ],
       ),
-    );
-  }
-
-  Widget _buildDutyCycleItem(String label, int duty, bool isSmall) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: isSmall ? 10 : 12,
-            color: CupertinoColors.systemGrey,
-          ),
-        ),
-        SizedBox(height: isSmall ? 2 : 4),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            '$duty',
-            style: TextStyle(
-              fontSize: isSmall ? 16 : 20,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -7133,7 +7221,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
         widget = ChartWidgetModel(
           id: id,
           title: title,
-          lineThickness: 2.0,
+          lineThickness: 0.5,
           showTimeControls: true,
           size: size,
           showXAxisLabels: true,
@@ -8238,7 +8326,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       ChartWidgetModel(
         id: 'chart_template',
         title: 'Sensor-Diagramm',
-        lineThickness: 2.0,
+        lineThickness: 0.5,
         showXAxisLabels: true,
         showYAxisLabels: true,
       ),
@@ -8491,7 +8579,7 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
           newWidget = ChartWidgetModel(
             id: id, 
             title: template.title, 
-            lineThickness: 2.0,
+            lineThickness: 0.5,
             showDataPoints: false,
             pointRadius: 2.0,
             showLines: true,
