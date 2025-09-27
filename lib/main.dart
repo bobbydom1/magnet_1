@@ -721,6 +721,16 @@ class AverageWidgetModel extends AnalysisWidgetModel {
   }) : super(id: id, title: title, type: 'average', size: size, position: position);
 }
 
+// Widget-Model für Sollwert-Steuerung (X/Y)
+class SetpointWidgetModel extends AnalysisWidgetModel {
+  SetpointWidgetModel({
+    required String id,
+    required String title,
+    AnalysisWidgetSize size = AnalysisWidgetSize.wideRectangle,
+    GridPosition? position,
+  }) : super(id: id, title: title, type: 'setpoint_control', size: size, position: position);
+}
+
 // Widget-Model für RMS-Rauschen Anzeige
 class NoiseWidgetModel extends AnalysisWidgetModel {
   final bool showXNoise;
@@ -5005,6 +5015,8 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       return _buildNoiseContent(model, data, isSmallWidget);
     } else if (model is AverageWidgetModel) {
       return _buildAverageContent(model, data, isSmallWidget);
+    } else if (model is SetpointWidgetModel) {
+      return _buildSetpointContent(model, isSmallWidget);
     }
 
     return Container();
@@ -5633,6 +5645,11 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     return _buildWidgetContent(model, data, activeTabIndex, 0);
   }
 
+  Widget _buildSetpointContent(SetpointWidgetModel model, bool isSmall) {
+    // Verwende _buildWidgetContent für konsistente Darstellung
+    return _buildWidgetContent(model, [], activeTabIndex, 0);
+  }
+
   Widget _buildDutyCycleContent(DutyCycleWidgetModel model, bool isSmall) {
     return Padding(
       padding: EdgeInsets.all(isSmall ? 4 : 8),
@@ -6035,6 +6052,45 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
             ],
           ],
         );
+
+      case 'setpoint_control':
+        final home = context.findAncestorStateOfType<_HomePageState>();
+        if (home == null) {
+          return Container(
+            height: 200,
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  CupertinoIcons.arrow_up_right_square,
+                  size: 48,
+                  color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Keine Verbindung',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: CupertinoColors.secondaryLabel.resolveFrom(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Verbinden Sie sich mit einem Gerät',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: CupertinoColors.tertiaryLabel.resolveFrom(context),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Inline implementation statt SetpointControlPanel
+        return _SetpointControlWidget(sendPidCommand: home.sendPidCommand);
 
       case 'noise':
         final noiseModel = model as NoiseWidgetModel;
@@ -6982,6 +7038,20 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                                 );
                               },
                             ),
+                            _buildIOSWidgetOption(
+                              icon: CupertinoIcons.arrow_up_right_square,
+                              iconColor: CupertinoColors.systemOrange,
+                              title: 'Sollwert-Steuerung',
+                              subtitle: 'X/Y-Sollwerte gezielt übermitteln',
+                              onTap: () {
+                                Navigator.pop(context);
+                                _showWidgetSizeSelector(
+                                  tabIndex: tabIndex,
+                                  widgetType: 'setpoint_control',
+                                  title: 'Sollwert-Steuerung',
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -7258,6 +7328,13 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
         break;
       case 'noise':
         widget = NoiseWidgetModel(
+          id: id,
+          title: title,
+          size: size,
+        );
+        break;
+      case 'setpoint_control':
+        widget = SetpointWidgetModel(
           id: id,
           title: title,
           size: size,
@@ -8346,7 +8423,218 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
         id: 'avg_template',
         title: 'Durchschnittswerte',
       ),
+      SetpointWidgetModel(
+        id: 'setpoint_template',
+        title: 'Sollwert-Steuerung',
+      ),
     ];
+  }
+}
+
+class _SetpointControlWidget extends StatefulWidget {
+  const _SetpointControlWidget({
+    required this.sendPidCommand,
+  });
+
+  final Future<void> Function(String) sendPidCommand;
+
+  @override
+  State<_SetpointControlWidget> createState() => _SetpointControlWidgetState();
+}
+
+class _SetpointControlWidgetState extends State<_SetpointControlWidget> {
+  final TextEditingController _xController = TextEditingController(text: '0.0');
+  final TextEditingController _yController = TextEditingController(text: '0.0');
+  bool _busy = false;
+
+  static const double _limit = 20.0;
+
+  @override
+  void dispose() {
+    _xController.dispose();
+    _yController.dispose();
+    super.dispose();
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _send() async {
+    if (_busy) return;
+
+    final x = double.tryParse(_xController.text.replaceAll(',', '.'));
+    final y = double.tryParse(_yController.text.replaceAll(',', '.'));
+
+    if (x == null || y == null) {
+      _showSnack('Ungültige Eingabe');
+      return;
+    }
+
+    if (x.abs() > _limit || y.abs() > _limit) {
+      _showSnack('Maximal ±$_limit mT');
+      return;
+    }
+
+    setState(() => _busy = true);
+
+    try {
+      await widget.sendPidCommand('spx=${x.toStringAsFixed(2)}');
+      await Future.delayed(const Duration(milliseconds: 20));
+      await widget.sendPidCommand('spy=${y.toStringAsFixed(2)}');
+
+      if (!mounted) return;
+      _showSnack('Sollwerte gesendet: X=${x.toStringAsFixed(2)}, Y=${y.toStringAsFixed(2)}');
+      FocusScope.of(context).unfocus();
+    } catch (err) {
+      _showSnack('Fehler beim Senden: $err');
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _reset() async {
+    if (_busy) return;
+
+    _xController.text = '0.0';
+    _yController.text = '0.0';
+
+    setState(() => _busy = true);
+
+    try {
+      await widget.sendPidCommand('spx=0.0');
+      await Future.delayed(const Duration(milliseconds: 20));
+      await widget.sendPidCommand('spy=0.0');
+
+      if (mounted) {
+        _showSnack('Auf (0,0) gesetzt');
+        FocusScope.of(context).unfocus();
+      }
+    } catch (err) {
+      _showSnack('Reset fehlgeschlagen: $err');
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'X/Y SOLLWERTE (mT)',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: CupertinoColors.secondaryLabel.resolveFrom(context),
+            letterSpacing: 0.06,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: CupertinoColors.secondarySystemGroupedBackground.resolveFrom(context),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: CupertinoTextField(
+                      controller: _xController,
+                      enabled: !_busy,
+                      keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                      placeholder: 'X (mT)',
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemBackground,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: CupertinoColors.separator,
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: CupertinoTextField(
+                      controller: _yController,
+                      enabled: !_busy,
+                      keyboardType: const TextInputType.numberWithOptions(signed: true, decimal: true),
+                      placeholder: 'Y (mT)',
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemBackground,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: CupertinoColors.separator,
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: CupertinoButton(
+                      onPressed: _busy ? null : _send,
+                      color: CupertinoColors.activeBlue,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      borderRadius: BorderRadius.circular(8),
+                      child: _busy
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                SizedBox(
+                                  height: 16,
+                                  width: 16,
+                                  child: CupertinoActivityIndicator(color: CupertinoColors.white),
+                                ),
+                                SizedBox(width: 8),
+                                Text('Senden…', style: TextStyle(fontSize: 14, color: CupertinoColors.white)),
+                              ],
+                            )
+                          : const Text('Übermitteln', style: TextStyle(fontSize: 14, color: CupertinoColors.white)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  CupertinoButton(
+                    onPressed: _busy ? null : _reset,
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: CupertinoColors.activeBlue,
+                          width: 1,
+                        ),
+                      ),
+                      child: const Text('Reset', style: TextStyle(fontSize: 14, color: CupertinoColors.activeBlue)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -8563,6 +8851,8 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
         return 'Durchschnittswerte der Messungen';
       case 'noise':
         return 'RMS-Rauschen mit Qualitätsanzeige';
+      case 'setpoint_control':
+        return 'Sollwerte gezielt setzen';
       default:
         return '';
     }
@@ -8601,6 +8891,9 @@ class _EditWorkspaceScreenState extends State<EditWorkspaceScreen> {
           break;
         case 'noise':
           newWidget = NoiseWidgetModel(id: id, title: template.title);
+          break;
+        case 'setpoint_control':
+          newWidget = SetpointWidgetModel(id: id, title: template.title);
           break;
         default:
           return;
