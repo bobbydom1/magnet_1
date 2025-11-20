@@ -778,7 +778,7 @@ class AnalysisTab {
     final widgets = [
       ChartWidgetModel(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: 'Sensor-Diagramm',
+        title: 'Live-Sensor-Diagramm',
         lineThickness: 0.5,
         showTimeControls: true, // Aktiviere Zeitkontrollen standardmäßig für Live-Tabs
         showDataPoints: false,
@@ -1980,9 +1980,9 @@ class XAxisLabelPainter extends CustomPainter {
     
     double absSeconds = seconds.abs();
     String prefix = seconds < 0 ? '-' : '';
-    
+
     if (absSeconds < 60) {
-      return '$prefix${absSeconds.toInt()}s';
+      return '$prefix${absSeconds.toInt()}';
     } else if (absSeconds < 3600) {
       double minutes = absSeconds / 60;
       if (minutes == minutes.toInt()) {
@@ -2049,7 +2049,7 @@ class XAxisLabelPainter extends CustomPainter {
 }
 
 // Echtzeit-Chart Widget mit Stream - jetzt mit Paket-Verarbeitung!
-class RealtimeStreamChart extends StatefulWidget {
+class LiveSensorChart extends StatefulWidget {
   final ChartWidgetModel model;
   final Stream<List<SensorReading>> dataStream; // Akzeptiert jetzt Listen
   final bool isSmall;
@@ -2057,7 +2057,7 @@ class RealtimeStreamChart extends StatefulWidget {
   final bool isRecording;
   final Function(bool)? onRecordingChanged;
 
-  const RealtimeStreamChart({
+  const LiveSensorChart({
     Key? key,
     required this.model,
     required this.dataStream,
@@ -2068,10 +2068,10 @@ class RealtimeStreamChart extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<RealtimeStreamChart> createState() => _RealtimeStreamChartState();
+  State<LiveSensorChart> createState() => _LiveSensorChartState();
 }
 
-class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
+class _LiveSensorChartState extends State<LiveSensorChart> {
   // WICHTIG: List durch ListQueue ersetzen für maximale Performance beim Entfernen
   final Queue<SensorReading> _buffer = ListQueue();
   StreamSubscription<List<SensorReading>>? _subscription;
@@ -2163,7 +2163,7 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
   // *** HIER DIE NEUE METHODE EINFÜGEN ***
   // Diese Methode wird aufgerufen, wenn sich das Widget (z.B. die displayRange) ändert
   @override
-  void didUpdateWidget(RealtimeStreamChart oldWidget) {
+  void didUpdateWidget(LiveSensorChart oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Wenn sich die Datenquelle oder die Zeitspanne geändert hat, müssen wir reagieren
     if (oldWidget.dataStream != widget.dataStream) {
@@ -2425,142 +2425,183 @@ class _RealtimeStreamChartState extends State<RealtimeStreamChart> {
 
         // Chart mit Achsenbeschriftungen
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // --- 1. MIN/MAX DER DATEN FINDEN ---
-              double dataMin = 0.0, dataMax = 0.0;
-              if (_buffer.isNotEmpty) {
-                dataMin = _buffer.first.x;
-                dataMax = _buffer.first.x;
-                for (var r in _buffer) {
-                  dataMin = math.min(dataMin, math.min(r.x, r.y));
-                  dataMax = math.max(dataMax, math.max(r.x, r.y));
-                }
-              } else {
-                dataMin = -10; dataMax = 10;
-              }
-              
-              // --- 2. "SCHÖNE" ACHSENWERTE BERECHNEN (DAS HERZSTÜCK) ---
-              final axisValues = _calculateNiceAxisValues(dataMin, dataMax, maxTicks: 5);
-              final double axisMinY = axisValues['axisMin']!;
-              final double axisMaxY = axisValues['axisMax']!;
-              final double niceInterval = axisValues['interval']!;
-              
-              // --- 3. BERECHNE DIE EXAKTEN GRID-POSITIONEN ---
-              // Diese werden später berechnet, wenn wir die tatsächliche Größe kennen
-              List<double> gridYPositions = [];
-              
-              return Stack(
-                children: [
-                  // Y-Achsen Beschriftung
-                  if (widget.model.showYAxisLabels && !widget.isSmall)
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: widget.model.showXAxisLabels && !widget.isSmall ? 30 : 0, // WICHTIG: Gleiche Höhe wie Chart!
-                      width: 40,
-                      child: CustomPaint( // <-- NEU
-                        painter: YAxisLabelPainter(
-                          axisMin: axisMinY,
-                          axisMax: axisMaxY,
-                          interval: niceInterval,
-                          labelStyle: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
-                            color: CupertinoColors.secondaryLabel,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                    ),
-                  
-                  // Chart
-                  Positioned(
-                    left: widget.model.showYAxisLabels && !widget.isSmall ? 40 : 0,
-                    right: 0,
-                    top: 0,
-                    bottom: widget.model.showXAxisLabels && !widget.isSmall ? 30 : 0,
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        painter: RealtimeChartPainter( // <-- HIER IST DIE MAGIE
-                          // ... alle bisherigen Parameter ...
-                          visibleData: _buffer.toList(growable: false),
-                          displayRange: widget.model.displayRange,
-                          showGrid: widget.model.showGrid,
-                          lineThickness: widget.model.lineThickness,
-                          showDataPoints: widget.model.showDataPoints,
-                          pointRadius: widget.model.pointRadius,
-                          showLines: widget.model.showLines,
-                          showPwmValues: widget.model.showPwmValues,
-                          triggerEnabled: widget.model.triggerEnabled,
-                          upperThreshold: widget.model.upperThreshold,
-                          lowerThreshold: widget.model.lowerThreshold,
-                          
-                          // *** Die neuen, synchronisierten Werte ***
-                          axisMinY: axisMinY,
-                          axisMaxY: axisMaxY,
-                          yInterval: niceInterval,
-                          gridYPositions: null, // Wird intern berechnet
-                          gridXPositions: _gridXPositions, // X-Grid-Positionen weitergeben
-                        ),
-                        size: Size.infinite,
-                      ),
+          child: Row(
+            children: [
+              // Y-Achsen-Beschriftung (vertikal, links)
+              if (!widget.isSmall)
+                RotatedBox(
+                  quarterTurns: 3,
+                  child: Text(
+                    'Magnetische Flussdichte B in mT',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.black,
+                      letterSpacing: 0,
                     ),
                   ),
-                  
-                  // X-Achsen Beschriftung
-                  if (widget.model.showXAxisLabels && !widget.isSmall)
-                    Positioned(
-                      left: widget.model.showYAxisLabels ? 40 : 0,
-                      right: 0,
-                      bottom: 0,
-                      height: 30,
-                      child: Container(
-                        color: CupertinoColors.systemBackground,
-                        child: CustomPaint(
-                          painter: XAxisLabelPainter(
-                            displayRange: widget.model.displayRange.toDouble(),
-                            labelStyle: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                              color: CupertinoColors.secondaryLabel,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            ),
-                            onPositionsCalculated: (positions) {
-                              // X-Positionen für vertikale Grid-Linien speichern
-                              // Nach dem Frame aktualisieren, um setState während paint zu vermeiden
-                              if (mounted) {
-                                // Prüfen ob sich die Positionen geändert haben
-                                bool hasChanged = _gridXPositions.length != positions.length;
-                                if (!hasChanged && _gridXPositions.length == positions.length) {
-                                  for (int i = 0; i < positions.length; i++) {
-                                    if ((_gridXPositions[i] - positions[i]).abs() > 0.1) {
-                                      hasChanged = true;
-                                      break;
-                                    }
-                                  }
-                                }
-                                
-                                if (hasChanged) {
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    if (mounted) {
-                                      setState(() {
-                                        _gridXPositions = positions;
-                                      });
-                                    }
-                                  });
-                                }
+                ),
+                // Chart
+                Expanded(
+                  child: Column(
+                    children: [
+                      // Der eigentliche Chart
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            // --- 1. MIN/MAX DER DATEN FINDEN ---
+                            double dataMin = 0.0, dataMax = 0.0;
+                            if (_buffer.isNotEmpty) {
+                              dataMin = _buffer.first.x;
+                              dataMax = _buffer.first.x;
+                              for (var r in _buffer) {
+                                dataMin = math.min(dataMin, math.min(r.x, r.y));
+                                dataMax = math.max(dataMax, math.max(r.x, r.y));
                               }
-                            },
-                          ),
-                          size: Size.infinite,
+                            } else {
+                              dataMin = -10; dataMax = 10;
+                            }
+
+                            // --- 2. "SCHÖNE" ACHSENWERTE BERECHNEN (DAS HERZSTÜCK) ---
+                            final axisValues = _calculateNiceAxisValues(dataMin, dataMax, maxTicks: 5);
+                            final double axisMinY = axisValues['axisMin']!;
+                            final double axisMaxY = axisValues['axisMax']!;
+                            final double niceInterval = axisValues['interval']!;
+
+                            // --- 3. BERECHNE DIE EXAKTEN GRID-POSITIONEN ---
+                            // Diese werden später berechnet, wenn wir die tatsächliche Größe kennen
+                            List<double> gridYPositions = [];
+
+                            return Stack(
+                              children: [
+                                // Y-Achsen Beschriftung
+                                if (widget.model.showYAxisLabels && !widget.isSmall)
+                                  Positioned(
+                                    left: 0,
+                                    top: 0,
+                                    bottom: widget.model.showXAxisLabels && !widget.isSmall ? 12 : 0, // WICHTIG: Gleiche Höhe wie Chart!
+                                    width: 30,
+                                    child: CustomPaint( // <-- NEU
+                                      painter: YAxisLabelPainter(
+                                        axisMin: axisMinY,
+                                        axisMax: axisMaxY,
+                                        interval: niceInterval,
+                                        labelStyle: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w400,
+                                          color: Colors.black,
+                                          letterSpacing: 0,
+                                          height: 1.0,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                // Chart
+                                Positioned(
+                                  left: widget.model.showYAxisLabels && !widget.isSmall ? 30 : 0,
+                                  right: 0,
+                                  top: 0,
+                                  bottom: widget.model.showXAxisLabels && !widget.isSmall ? 12 : 0,
+                                  child: RepaintBoundary(
+                                    child: CustomPaint(
+                                      painter: RealtimeChartPainter( // <-- HIER IST DIE MAGIE
+                                        // ... alle bisherigen Parameter ...
+                                        visibleData: _buffer.toList(growable: false),
+                                        displayRange: widget.model.displayRange,
+                                        showGrid: widget.model.showGrid,
+                                        lineThickness: widget.model.lineThickness,
+                                        showDataPoints: widget.model.showDataPoints,
+                                        pointRadius: widget.model.pointRadius,
+                                        showLines: widget.model.showLines,
+                                        showPwmValues: widget.model.showPwmValues,
+                                        triggerEnabled: widget.model.triggerEnabled,
+                                        upperThreshold: widget.model.upperThreshold,
+                                        lowerThreshold: widget.model.lowerThreshold,
+
+                                        // *** Die neuen, synchronisierten Werte ***
+                                        axisMinY: axisMinY,
+                                        axisMaxY: axisMaxY,
+                                        yInterval: niceInterval,
+                                        gridYPositions: null, // Wird intern berechnet
+                                        gridXPositions: _gridXPositions, // X-Grid-Positionen weitergeben
+                                      ),
+                                      size: Size.infinite,
+                                    ),
+                                  ),
+                                ),
+
+                                // X-Achsen Beschriftung
+                                if (widget.model.showXAxisLabels && !widget.isSmall)
+                                  Positioned(
+                                    left: widget.model.showYAxisLabels ? 30 : 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    height: 12,
+                                    child: Container(
+                                      color: CupertinoColors.systemBackground,
+                                      child: CustomPaint(
+                                        painter: XAxisLabelPainter(
+                                          displayRange: widget.model.displayRange.toDouble(),
+                                          labelStyle: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w400,
+                                            color: Colors.black,
+                                            letterSpacing: 0,
+                                            height: 1.0,
+                                          ),
+                                          onPositionsCalculated: (positions) {
+                                            // X-Positionen für vertikale Grid-Linien speichern
+                                            // Nach dem Frame aktualisieren, um setState während paint zu vermeiden
+                                            if (mounted) {
+                                              // Prüfen ob sich die Positionen geändert haben
+                                              bool hasChanged = _gridXPositions.length != positions.length;
+                                              if (!hasChanged && _gridXPositions.length == positions.length) {
+                                                for (int i = 0; i < positions.length; i++) {
+                                                  if ((_gridXPositions[i] - positions[i]).abs() > 0.1) {
+                                                    hasChanged = true;
+                                                    break;
+                                                  }
+                                                }
+                                              }
+
+                                              if (hasChanged) {
+                                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                  if (mounted) {
+                                                    setState(() {
+                                                      _gridXPositions = positions;
+                                                    });
+                                                  }
+                                                });
+                                              }
+                                            }
+                                          },
+                                        ),
+                                        size: Size.infinite,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
                         ),
                       ),
-                    ),
-                ],
-              );
-            },
-          ),
+                      // X-Achsen-Beschriftung (horizontal, unten)
+                      if (!widget.isSmall)
+                        Text(
+                          'Zeit t in s',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w400,
+                            color: Colors.black,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
         ),
       ],
     );
@@ -2800,148 +2841,234 @@ class OptimizedChartWidget extends StatelessWidget {
           ),
         ),
 
-        // Chart mit RepaintBoundary für isoliertes Rendering
+        // Achsenbeschriftungen - GROSS und AUFFÄLLIG
+        Container(
+          padding: const EdgeInsets.all(12),
+          color: Colors.yellow.shade100,
+          child: Row(
+            children: [
+              // Y-Achsen-Beschriftung links
+              Text(
+                'Y-ACHSE: Magnetfeld B [mT]',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.red,
+                ),
+              ),
+              Spacer(),
+              // X-Achsen-Beschriftung rechts
+              Text(
+                'X-ACHSE: Zeit t [s]',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.blue,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Chart mit Achsenbeschriftungen
         Expanded(
-          child: RepaintBoundary(
-            child: Padding(
-              padding: EdgeInsets.all(isSmall ? 8 : 16),
-              child: LineChart(
-                LineChartData(
-                  clipData: FlClipData.all(),
-                  minX: actualMinX,
-                  maxX: actualMaxX,
-                  minY: minValue - padding,
-                  maxY: maxValue + padding,
-                  gridData: FlGridData(
-                    show: model.showGrid,
-                    drawVerticalLine: true,
-                    drawHorizontalLine: true,
-                    horizontalInterval: (maxValue - minValue) / 5,
-                    verticalInterval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 5 : (actualMaxX - actualMinX) / 4,
-                    getDrawingHorizontalLine: (value) {
-                      return FlLine(
-                        color: CupertinoColors.systemGrey4.withOpacity(0.3),
-                        strokeWidth: 1,
-                      );
-                    },
-                    getDrawingVerticalLine: (value) {
-                      return FlLine(
-                        color: CupertinoColors.systemGrey4.withOpacity(0.3),
-                        strokeWidth: 1,
-                      );
-                    },
-                  ),
-                  titlesData: FlTitlesData(
-                    show: !isSmall && (model.showXAxisLabels || model.showYAxisLabels),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: !isSmall && model.showYAxisLabels,
-                        reservedSize: 40,
-                        interval: (maxValue - minValue) / 4,
-                        getTitlesWidget: (value, meta) => Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: Text(
-                            '${value.toStringAsFixed(0)} mT',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: CupertinoColors.systemGrey,
-                            ),
-                            textAlign: TextAlign.right,
-                          ),
-                        ),
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: !isSmall && model.showXAxisLabels,
-                        reservedSize: 30,
-                        interval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 4 : (actualMaxX - actualMinX) / 5,
-                        getTitlesWidget: (value, meta) {
-                          String label;
-                          if (isSnapshot) {
-                            // Für Snapshots: Zeige Zeit seit Beginn der Aufnahme
-                            if (value < 60) {
-                              label = '${value.toInt()}s';
-                            } else {
-                              label = '${(value / 60).toStringAsFixed(1)}m';
-                            }
-                          } else {
-                            // Für Live-Daten: Zeige Zeit relativ zur aktuellen Zeit
-                            final seconds = model.displayRange - value;
-                            if (seconds < 60) {
-                              label = '-${seconds.toInt()}s';
-                            } else {
-                              label = '-${(seconds / 60).toStringAsFixed(1)}m';
-                            }
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              label,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: CupertinoColors.systemGrey,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  ),
-                  borderData: FlBorderData(
-                    show: true,
-                    border: Border.all(
-                      color: CupertinoColors.systemGrey4.withOpacity(0.5),
-                      width: 1,
+          child: Row(
+            children: [
+              // Y-Achsen-Beschriftung (vertikal, links)
+              if (!isSmall)
+                RotatedBox(
+                  quarterTurns: 3,
+                  child: Text(
+                    'Magnetische Flussdichte B in mT',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.black,
+                      letterSpacing: 0,
                     ),
                   ),
-                  lineBarsData: [
-                    // X-Achse Daten (rot)
-                    LineChartBarData(
-                      spots: reducedData.map((reading) {
-                        final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
-                        return FlSpot(timeDiff, reading.x.toDouble());
-                      }).toList(),
-                      isCurved: false,
-                      color: CupertinoColors.systemRed,
-                      barWidth: model.showLines ? model.lineThickness : 0,
-                      isStrokeCapRound: true,
-                      dotData: FlDotData(
-                        show: model.showDataPoints,
-                        getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                          radius: model.pointRadius,
-                          color: CupertinoColors.systemRed,
-                          strokeWidth: 0,
-                        ),
-                      ),
-                      belowBarData: BarAreaData(show: false),
-                    ),
-                    // Y-Achse Daten (blau)
-                    LineChartBarData(
-                      spots: spots,
-                      isCurved: false,
-                      color: CupertinoColors.activeBlue,
-                      barWidth: model.showLines ? model.lineThickness : 0,
-                      isStrokeCapRound: true,
-                      dotData: FlDotData(
-                        show: model.showDataPoints,
-                        getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                          radius: model.pointRadius,
-                          color: CupertinoColors.activeBlue,
-                          strokeWidth: 0,
-                        ),
-                      ),
-                      belowBarData: BarAreaData(show: false),
-                    ),
-                  ],
+                ),
+                // Chart
+                Expanded(
+                  child: Column(
+                    children: [
+                      // Der eigentliche Chart
+                      Expanded(
+                        child: RepaintBoundary(
+                          child: Padding(
+                            padding: EdgeInsets.zero,
+                            child: LineChart(
+                              LineChartData(
+                                clipData: FlClipData.all(),
+                                minX: actualMinX,
+                                maxX: actualMaxX,
+                                minY: minValue - padding,
+                                maxY: maxValue + padding,
+                                gridData: FlGridData(
+                                  show: model.showGrid,
+                                  drawVerticalLine: true,
+                                  drawHorizontalLine: true,
+                                  horizontalInterval: (maxValue - minValue) / 5,
+                                  verticalInterval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 5 : (actualMaxX - actualMinX) / 4,
+                                  getDrawingHorizontalLine: (value) {
+                                    return FlLine(
+                                      color: CupertinoColors.systemGrey4.withOpacity(0.3),
+                                      strokeWidth: 1,
+                                    );
+                                  },
+                                  getDrawingVerticalLine: (value) {
+                                    return FlLine(
+                                      color: CupertinoColors.systemGrey4.withOpacity(0.3),
+                                      strokeWidth: 1,
+                                    );
+                                  },
+                                ),
+                                titlesData: FlTitlesData(
+                                  show: true, // Immer anzeigen für wissenschaftliche Korrektheit
+                                  leftTitles: AxisTitles(
+                                    sideTitles: SideTitles(
+                                      showTitles: model.showYAxisLabels,
+                                      reservedSize: 22,
+                                      interval: (maxValue - minValue) / 4,
+                                      getTitlesWidget: (value, meta) => Text(
+                                        '${value.toStringAsFixed(1)} mT',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w400,
+                                          color: Colors.black,
+                                          letterSpacing: 0,
+                                          height: 1.0,
+                                        ),
+                                        textAlign: TextAlign.right,
+                                      ),
+                                    ),
+                                    axisNameWidget: const Text(
+                                      'B [mT]',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                    axisNameSize: 25,
+                                  ),
+                                  bottomTitles: AxisTitles(
+                                    sideTitles: SideTitles(
+                                      showTitles: model.showXAxisLabels,
+                                      reservedSize: 10,
+                                      interval: (actualMaxX - actualMinX) > 30 ? (actualMaxX - actualMinX) / 4 : (actualMaxX - actualMinX) / 5,
+                                      getTitlesWidget: (value, meta) {
+                                        String label;
+                                        if (isSnapshot) {
+                                          // Für Snapshots: Zeige Zeit seit Beginn der Aufnahme
+                                          if (value < 60) {
+                                            label = '${value.toInt()}';
+                                          } else {
+                                            label = '${(value / 60).toStringAsFixed(1)}m';
+                                          }
+                                        } else {
+                                          // Für Live-Daten: Zeige Zeit relativ zur aktuellen Zeit
+                                          final seconds = model.displayRange - value;
+                                          if (seconds < 60) {
+                                            label = '-${seconds.toInt()}';
+                                          } else {
+                                            label = '-${(seconds / 60).toStringAsFixed(1)}m';
+                                          }
+                                        }
+                                        return Text(
+                                          label,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w400,
+                                            color: Colors.black,
+                                            letterSpacing: 0,
+                                            height: 1.0,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    axisNameWidget: const Text(
+                                      't [s]',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                    axisNameSize: 25,
+                                  ),
+                                  rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                  topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                ),
+                                borderData: FlBorderData(
+                                  show: true,
+                                  border: Border.all(
+                                    color: CupertinoColors.systemGrey4.withOpacity(0.5),
+                                    width: 1,
+                                  ),
+                                ),
+                                lineBarsData: [
+                                  // X-Achse Daten (rot)
+                                  LineChartBarData(
+                                    spots: reducedData.map((reading) {
+                                      final timeDiff = reading.timestamp.difference(startTime).inMilliseconds / 1000.0;
+                                      return FlSpot(timeDiff, reading.x.toDouble());
+                                    }).toList(),
+                                    isCurved: false,
+                                    color: CupertinoColors.systemRed,
+                                    barWidth: model.showLines ? model.lineThickness : 0,
+                                    isStrokeCapRound: true,
+                                    dotData: FlDotData(
+                                      show: model.showDataPoints,
+                                      getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                                        radius: model.pointRadius,
+                                        color: CupertinoColors.systemRed,
+                                        strokeWidth: 0,
+                                      ),
+                                    ),
+                                    belowBarData: BarAreaData(show: false),
+                                  ),
+                                  // Y-Achse Daten (blau)
+                                  LineChartBarData(
+                                    spots: spots,
+                                    isCurved: false,
+                                    color: CupertinoColors.activeBlue,
+                                    barWidth: model.showLines ? model.lineThickness : 0,
+                                    isStrokeCapRound: true,
+                                    dotData: FlDotData(
+                                      show: model.showDataPoints,
+                                      getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                                        radius: model.pointRadius,
+                                        color: CupertinoColors.activeBlue,
+                                        strokeWidth: 0,
+                                      ),
+                                    ),
+                                    belowBarData: BarAreaData(show: false),
+                                  ),
+                                ],
                 ),
                 duration: Duration.zero, // Keine Animation für flüssigere Updates
                 curve: Curves.linear,
               ),
             ),
           ),
+        ),
+        // X-Achsen-Beschriftung (horizontal, unten)
+        if (!isSmall)
+          Text(
+            'Zeit t in s',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w400,
+              color: Colors.black,
+              letterSpacing: 0,
+            ),
+          ),
+      ],
+    ),
+  ),
+              ],
+            ),
         ),
       ],
     );
@@ -3158,7 +3285,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     final widgets = [
       ChartWidgetModel(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: 'Sensor-Diagramm',
+        title: 'Live-Sensor-Diagramm',
         lineThickness: 0.5,
         showTimeControls: false, // Keine Zeitkontrollen für Snapshots
         showDataPoints: false,
@@ -5032,7 +5159,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
       // JA -> Benutze IMMER das ultra-schnelle Stream-Chart.
       final homePageState = context.findAncestorStateOfType<_HomePageState>();
       if (homePageState != null) {
-        return RealtimeStreamChart(
+        return LiveSensorChart(
           model: model,
           dataStream: homePageState._sensorDataManager.stream, // Direkt an den schnellen Datenstrom anschließen
           isSmall: isSmall,
@@ -5375,51 +5502,69 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                   },
                 ),
                 titlesData: FlTitlesData(
-                  show: !isSmall,
+                  show: true, // Immer anzeigen für wissenschaftliche Korrektheit
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
-                      showTitles: !isSmall,
-                      reservedSize: 40,
+                      showTitles: true,
+                      reservedSize: 22,
                       interval: interval,
-                      getTitlesWidget: (value, meta) => Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: Text(
-                          value.toStringAsFixed(1),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: CupertinoColors.systemGrey,
-                          ),
-                          textAlign: TextAlign.right,
+                      getTitlesWidget: (value, meta) => Text(
+                        '${value.toStringAsFixed(1)} mT',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black,
+                          letterSpacing: 0,
+                          height: 1.0,
                         ),
+                        textAlign: TextAlign.right,
                       ),
                     ),
+                    axisNameWidget: const Text(
+                      'B [mT]',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    axisNameSize: 25,
                   ),
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
-                      showTitles: !isSmall,
-                      reservedSize: 30,
+                      showTitles: true,
+                      reservedSize: 10,
                       interval: xInterval,
                       getTitlesWidget: (value, meta) {
                         // Zeige Zeitangaben relativ zur aktuellen Zeit
                         final seconds = model.displayRange - value;
                         String label;
                         if (seconds < 60) {
-                          label = '-${seconds.toInt()}s';
+                          label = '-${seconds.toInt()}';
                         } else {
                           label = '-${(seconds / 60).toStringAsFixed(1)}m';
                         }
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: CupertinoColors.systemGrey,
-                            ),
+                        return Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w400,
+                            color: Colors.black,
+                            letterSpacing: 0,
+                            height: 1.0,
                           ),
                         );
                       },
                     ),
+                    axisNameWidget: const Text(
+                      't [s]',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    axisNameSize: 25,
                   ),
                   rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -6957,14 +7102,14 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                             _buildIOSWidgetOption(
                               icon: CupertinoIcons.chart_bar_square,
                               iconColor: CupertinoColors.systemGrey,
-                              title: 'Sensor-Diagramm',
+                              title: 'Live-Sensor-Diagramm',
                               subtitle: 'Live X/Y Datenvisualisierung',
                               onTap: () {
                                 Navigator.pop(context);
                                 _showWidgetSizeSelector(
                                   tabIndex: tabIndex,
                                   widgetType: 'chart',
-                                  title: 'Sensor-Diagramm',
+                                  title: 'Live-Sensor-Diagramm',
                                 );
                               },
                             ),
@@ -8402,7 +8547,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
     return [
       ChartWidgetModel(
         id: 'chart_template',
-        title: 'Sensor-Diagramm',
+        title: 'Live-Sensor-Diagramm',
         lineThickness: 0.5,
         showXAxisLabels: true,
         showYAxisLabels: true,
@@ -9115,7 +9260,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     // Stattdessen verwenden wir gezielte Updates für spezifische Widgets
 
     // Kein globaler Chart-Update Timer mehr nötig!
-    // RealtimeStreamChart updated sich selbst über den Stream
+    // LiveSensorChart updated sich selbst über den Stream
   }
 
   Future<void> _initBluetooth() async {
@@ -11351,7 +11496,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           color: Colors.grey.shade50,
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: _buildDualAxisChart(),
+            child: SizedBox.expand(
+              child: _buildDualAxisChart(),
+            ),
           ),
         ),
 
@@ -12085,47 +12232,118 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       decimalPlaces = 0;
     }
 
-    return LineChart(
-      LineChartData(
-        minY: dataMin,
-        maxY: dataMax,
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: horizontalInterval * 2, // Weniger Linien
-          getDrawingHorizontalLine: (value) {
-            return FlLine(
-              color: Colors.grey.shade200,
-              strokeWidth: 0.5,
-            );
-          },
-        ),
-        titlesData: FlTitlesData(
-          show: true,
-          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: false, // Keine X-Achse Beschriftung
-            ),
+    return Column(
+      children: [
+        // Legende oben
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 20,
+                height: 3,
+                color: Colors.blue,
+              ),
+              const SizedBox(width: 8),
+              const Text('X-Achse', style: TextStyle(fontSize: 12)),
+              const SizedBox(width: 20),
+              Container(
+                width: 20,
+                height: 3,
+                color: Colors.green,
+              ),
+              const SizedBox(width: 8),
+              const Text('Y-Achse', style: TextStyle(fontSize: 12)),
+            ],
           ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 40,
-              interval: horizontalInterval * 4, // Nur wenige Y-Werte
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  value.toStringAsFixed(decimalPlaces),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey.shade600,
+        ),
+        Expanded(
+          child: LineChart(
+            LineChartData(
+              minY: dataMin,
+              maxY: dataMax,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: true,
+                horizontalInterval: horizontalInterval * 2,
+                verticalInterval: (_displayHistoryLength / 10).toDouble(),
+                getDrawingHorizontalLine: (value) {
+                  return FlLine(
+                    color: Colors.grey.shade300,
+                    strokeWidth: 0.5,
+                  );
+                },
+                getDrawingVerticalLine: (value) {
+                  return FlLine(
+                    color: Colors.grey.shade200,
+                    strokeWidth: 0.5,
+                  );
+                },
+              ),
+              titlesData: FlTitlesData(
+                show: true,
+                rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 10,
+                    interval: (_displayHistoryLength / 5).toDouble(),
+                    getTitlesWidget: (value, meta) {
+                      // Zeit in Sekunden (100 Hz Sampling-Rate = 0.01s pro Sample)
+                      double timeInSeconds = value * 0.01;
+                      return Text(
+                        '${timeInSeconds.toStringAsFixed(1)}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black,
+                          letterSpacing: 0,
+                          height: 1.0,
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-          ),
-        ),
+                  axisNameWidget: const Text(
+                    'Zeit t [s]',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  axisNameSize: 25,
+                ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 22,
+                    interval: horizontalInterval * 4,
+                    getTitlesWidget: (value, meta) {
+                      return Text(
+                        value.toStringAsFixed(decimalPlaces),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black,
+                          letterSpacing: 0,
+                          height: 1.0,
+                        ),
+                      );
+                    },
+                  ),
+                  axisNameWidget: const Text(
+                    'B [mT]',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  axisNameSize: 25,
+                ),
+              ),
         borderData: FlBorderData(
           show: false, // Kein Rahmen
         ),
@@ -12155,10 +12373,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             belowBarData: BarAreaData(show: false),
           ),
         ],
-        lineTouchData: const LineTouchData(
-          enabled: false,
+              lineTouchData: const LineTouchData(
+                enabled: false,
+              ),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -12184,7 +12405,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 30,
+              reservedSize: 10,
               interval: _sensorDataManager.history.length > 100 ? _sensorDataManager.history.length / 5 : 20,
             ),
           ),
@@ -12193,7 +12414,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             axisNameSize: 20,
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 50,
+              reservedSize: 22,
               interval: 200,
             ),
           ),
@@ -12526,14 +12747,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               axisNameSize: 20,
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 30,
+                reservedSize: 10,
                 interval: calibrationCurves.maxPwm / 6 > 0
                     ? calibrationCurves.maxPwm / 6
                     : 100,
                 getTitlesWidget: (value, meta) {
                   return Text(
                     value.toInt().toString(),
-                    style: const TextStyle(fontSize: 10),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.black,
+                      letterSpacing: 0,
+                      height: 1.0,
+                    ),
                   );
                 },
               ),
@@ -12543,14 +12770,23 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               axisNameSize: 30,
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 50,
+                reservedSize: 22,
                 getTitlesWidget: (value, meta) {
                   String label;
                   double range = (finalMaxY - finalMinY).abs();
                   if (range < 0.1) label = value.toStringAsFixed(3);
                   else if (range < 1) label = value.toStringAsFixed(2);
                   else label = value.toStringAsFixed(1);
-                  return Text(label, style: const TextStyle(fontSize: 10));
+                  return Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.black,
+                      letterSpacing: 0,
+                      height: 1.0,
+                    ),
+                  );
                 },
                 interval: (finalMaxY - finalMinY).abs() / 5 > 0
                     ? (finalMaxY - finalMinY).abs() / 5
@@ -12831,12 +13067,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             axisNameSize: 20,
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 30,
+              reservedSize: 10,
               interval: liveCalibrationData.maxPwm / 6,
               getTitlesWidget: (value, meta) {
                 return Text(
                   value.toInt().toString(),
-                  style: const TextStyle(fontSize: 10),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w400,
+                    color: Colors.black,
+                    letterSpacing: 0,
+                    height: 1.0,
+                  ),
                 );
               },
             ),
@@ -12846,11 +13088,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             axisNameSize: 30,
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 50,
+              reservedSize: 22,
               getTitlesWidget: (value, meta) {
                 return Text(
                   value.toStringAsFixed(2),
-                  style: const TextStyle(fontSize: 10),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w400,
+                    color: Colors.black,
+                    letterSpacing: 0,
+                    height: 1.0,
+                  ),
                 );
               },
             ),
@@ -14973,21 +15221,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
           const SizedBox(height: 4),
           SizedBox(
-            height: 600,  // Viel höher für bessere Analyse!
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const ClampingScrollPhysics(),
-              child: Container(
-                width: 1800,  // Breiter für bessere Analyse
-                height: 600,  // Volle Höhe nutzen
-                padding: const EdgeInsets.all(10),
-                child: LineChart(
-                  LineChartData(
+            height: 280,  // Noch weiter reduzierte Höhe für Bildschirm-Passform
+            child: Container(
+              width: double.infinity,  // Nutze volle verfügbare Breite
+              height: 280,  // Gleiche Höhe wie Container
+              padding: const EdgeInsets.all(8),
+              child: LineChart(
+                LineChartData(
                     gridData: FlGridData(
                       show: true,
                       drawVerticalLine: true,
                       horizontalInterval: 0.5,   // Weniger Linien
-                      verticalInterval: 100,     // Nur bei 100er Schritten
+                      verticalInterval: 200,     // Weniger vertikale Linien für bessere Übersicht
                       getDrawingHorizontalLine: (value) {
                         return FlLine(
                           color: Colors.grey.shade300,
@@ -15012,14 +15257,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       bottomTitles: AxisTitles(
                         sideTitles: SideTitles(
                           showTitles: true,
-                          reservedSize: 35,
-                          interval: 100,  // Weniger aber klarere Beschriftungen
+                          reservedSize: 10,
+                          interval: 200,  // Angepasste Intervalle für kompakte Darstellung
                           getTitlesWidget: (value, meta) {
                             return Text(
                               value.toInt().toString(),
                               style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.black,
+                                letterSpacing: 0,
+                                height: 1.0,
                               ),
                             );
                           },
@@ -15031,13 +15279,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                         sideTitles: SideTitles(
                           showTitles: true,
                           interval: 0.5,  // Weniger Beschriftungen
-                          reservedSize: 50,
+                          reservedSize: 22,
                           getTitlesWidget: (value, meta) {
                             return Text(
                               value.toStringAsFixed(1),
                               style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.black,
+                                letterSpacing: 0,
+                                height: 1.0,
                               ),
                             );
                           },
@@ -15078,7 +15329,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -15114,31 +15364,27 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       }
     }
 
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 4),
-          SizedBox(
-            height: 600,  // Viel höher für bessere Analyse!
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const ClampingScrollPhysics(),
-              child: Container(
-                width: 1800,  // Breiter für bessere Analyse
-                height: 600,  // Volle Höhe nutzen
-                padding: const EdgeInsets.all(10),
-                child: LineChart(
-                  LineChartData(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 280,  // Noch weiter reduzierte Höhe für Bildschirm-Passform
+          child: Container(
+            width: double.infinity,  // Nutze volle verfügbare Breite
+            height: 280,  // Gleiche Höhe wie Container
+            padding: const EdgeInsets.all(8),
+            child: LineChart(
+              LineChartData(
                     gridData: FlGridData(
                       show: true,
                       drawVerticalLine: true,
                       horizontalInterval: 0.5,   // Weniger Linien
-                      verticalInterval: 100,     // Nur bei 100er Schritten
+                      verticalInterval: 200,     // Weniger vertikale Linien für bessere Übersicht
                       getDrawingHorizontalLine: (value) {
                         return FlLine(
                           color: Colors.grey.shade300,
@@ -15163,14 +15409,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                       bottomTitles: AxisTitles(
                         sideTitles: SideTitles(
                           showTitles: true,
-                          reservedSize: 35,
-                          interval: 100,  // Weniger aber klarere Beschriftungen
+                          reservedSize: 10,
+                          interval: 200,  // Angepasste Intervalle für kompakte Darstellung
                           getTitlesWidget: (value, meta) {
                             return Text(
                               value.toInt().toString(),
                               style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.black,
+                                letterSpacing: 0,
+                                height: 1.0,
                               ),
                             );
                           },
@@ -15182,13 +15431,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                         sideTitles: SideTitles(
                           showTitles: true,
                           interval: 0.5,  // Weniger Beschriftungen
-                          reservedSize: 50,
+                          reservedSize: 22,
                           getTitlesWidget: (value, meta) {
                             return Text(
                               value.toStringAsFixed(1),
                               style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.black,
+                                letterSpacing: 0,
+                                height: 1.0,
                               ),
                             );
                           },
@@ -15229,34 +15481,32 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ),
               ),
             ),
+        // Kompakte Legende
+        SizedBox(
+          height: 30,
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            children: curveNames.asMap().entries.map((entry) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 16,
+                    height: 2,
+                    color: colors[entry.key % colors.length],
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    entry.value,
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ],
+              );
+            }).toList(),
           ),
-          // Kompakte Legende
-          SizedBox(
-            height: 30,
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 4,
-              children: curveNames.asMap().entries.map((entry) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 16,
-                      height: 2,
-                      color: colors[entry.key % colors.length],
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      entry.value,
-                      style: const TextStyle(fontSize: 10),
-                    ),
-                  ],
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
