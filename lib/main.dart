@@ -2849,7 +2849,7 @@ class OptimizedChartWidget extends StatelessWidget {
             children: [
               // Y-Achsen-Beschriftung links
               Text(
-                'Y-ACHSE: Magnetfeld B [mT]',
+                'Y-ACHSE: Störfeld B in mT',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
@@ -2859,7 +2859,7 @@ class OptimizedChartWidget extends StatelessWidget {
               Spacer(),
               // X-Achsen-Beschriftung rechts
               Text(
-                'X-ACHSE: Zeit t [s]',
+                'X-ACHSE: Zeit t in s',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
@@ -2943,7 +2943,7 @@ class OptimizedChartWidget extends StatelessWidget {
                                       ),
                                     ),
                                     axisNameWidget: const Text(
-                                      'B [mT]',
+                                      'B in mT',
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
@@ -2988,7 +2988,7 @@ class OptimizedChartWidget extends StatelessWidget {
                                       },
                                     ),
                                     axisNameWidget: const Text(
-                                      't [s]',
+                                      't in s',
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
@@ -5521,7 +5521,7 @@ class _AnalysisWorkspacePageState extends State<AnalysisWorkspacePage> with Auto
                       ),
                     ),
                     axisNameWidget: const Text(
-                      'B [mT]',
+                      'B in mT',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -12334,7 +12334,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     },
                   ),
                   axisNameWidget: const Text(
-                    'B [mT]',
+                    'B in mT',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
@@ -15135,7 +15135,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return _buildAxisChart(
       'Hauptachsen-Kompensation',
       ['x_pos_up', 'x_pos_down', 'x_neg_up', 'x_neg_down', 'y_pos_up', 'y_pos_down', 'y_neg_up', 'y_neg_down'],
-      'Magnetfeld-Abweichung [mT]',
+      'Magnetfeld-Abweichung in mT',
       true, // mainAxis verwenden
     );
   }
@@ -15145,7 +15145,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return _buildAxisChart(
       'Kreuzkopplung',
       ['x_pos_up', 'x_pos_down', 'x_neg_up', 'x_neg_down', 'y_pos_up', 'y_pos_down', 'y_neg_up', 'y_neg_down'],
-      'Störfeld [mT]',
+      'Störfeld in mT',
       false, // crossAxis verwenden
     );
   }
